@@ -14,6 +14,7 @@ Key Architectural Features:
 
 import os
 import sys
+import shutil
 from datetime import datetime
 from typing import Dict, Any, List, Optional
 
@@ -35,6 +36,18 @@ except ImportError:
 # ==============================================================================
 # 1. PRINTER DISCOVERY & SELECTION
 # ==============================================================================
+
+def is_virtual_pdf_printer(printer_name: str) -> bool:
+    """
+    Check if the target printer is a virtual PDF or document printer
+    (e.g., 'Microsoft Print to PDF', 'Foxit PDF', 'OneNote', 'XPS', 'Virtual').
+    Such printers cannot accept raw ESC/POS binary stream spooling.
+    """
+    p_lower = (printer_name or "").lower().strip()
+    return any(keyword in p_lower for keyword in [
+        "print to pdf", "pdf", "xps", "onenote", "fax", "writer", "virtual"
+    ])
+
 
 def get_available_printers() -> List[str]:
     """Return a list of all installed printer names on this Windows PC."""
@@ -218,6 +231,12 @@ def print_voucher_silently(
     if not printer_name:
         printer_name = get_target_printer()
 
+    if printer_name == "DEFAULT" and HAS_WIN32:
+        try:
+            printer_name = win32print.GetDefaultPrinter()
+        except Exception:
+            pass
+
     if not paper_size:
         paper_size = database.get_setting("paper_size", "80mm")
 
@@ -235,6 +254,50 @@ def print_voucher_silently(
             f.write(receipt_text)
     except Exception as e:
         print(f"[PrinterEngine] Warning: Could not write preview file: {e}")
+
+    # =========================================================================
+    # VIRTUAL PDF / DOCUMENT PRINTER HANDLING:
+    # If the target printer is "Microsoft Print to PDF" or another virtual printer,
+    # DO NOT send raw ESC/POS binary stream (which results in a 0-byte corrupt PDF).
+    # Instead, generate the genuine, vector-crisp ReportLab PDF and launch it.
+    # =========================================================================
+    if is_virtual_pdf_printer(printer_name):
+        import pdf_generator
+        pdf_path = pdf_generator.generate_voucher_pdf(voucher)
+        v_id = voucher.get("id")
+        if v_id:
+            database.increment_print_count(v_id)
+
+        # Also copy to Documents and OneDrive Documents folder for user convenience
+        target_dirs = [
+            os.path.join(os.path.expanduser("~"), "Documents"),
+            os.path.join(os.path.expanduser("~"), "OneDrive", "Documents")
+        ]
+        for d in target_dirs:
+            if os.path.exists(d):
+                try:
+                    shutil.copy2(pdf_path, os.path.join(d, f"Hospital_Voucher_{v_no}.pdf"))
+                    shutil.copy2(pdf_path, os.path.join(d, "Hospital_Voucher.pdf"))
+                    # Overwrite any previous temp copies so browser reloads work immediately
+                    shutil.copy2(pdf_path, os.path.join(d, "Hospital_Voucher (1).pdf"))
+                    shutil.copy2(pdf_path, os.path.join(d, "Hospital_Voucher (2).pdf"))
+                except Exception:
+                    pass
+
+        # Auto-launch the genuine PDF in Chrome / default PDF viewer
+        try:
+            if pdf_path and os.path.exists(pdf_path):
+                os.startfile(pdf_path)
+        except Exception as launch_err:
+            print(f"[PrinterEngine] Notice: Could not auto-launch PDF: {launch_err}")
+
+        return {
+            "success": True,
+            "message": f"Voucher PDF generated & opened: {os.path.basename(pdf_path)}",
+            "printer": printer_name,
+            "preview_file": preview_file,
+            "pdf_path": pdf_path
+        }
 
     # If running on target Windows 7 PC with pywin32
     if HAS_WIN32:
