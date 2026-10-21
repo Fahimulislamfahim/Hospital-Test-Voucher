@@ -502,6 +502,117 @@ def get_recent_vouchers(limit: int = 50, db_path: str = DB_PATH) -> List[Dict[st
         return rows
 
 
+def search_vouchers_advanced(
+    query: str = "",
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    status: str = "ALL",
+    limit: int = 300,
+    db_path: str = DB_PATH
+) -> List[Dict[str, Any]]:
+    """
+    Search and filter vouchers with full search on voucher_no, patient_name,
+    patient_phone, referred_by, date range and payment status.
+    """
+    with _db_lock:
+        conn = get_connection(db_path)
+        cursor = conn.cursor()
+
+        conditions = []
+        params = []
+
+        if query and query.strip():
+            q_clean = f"%{query.strip()}%"
+            conditions.append("(voucher_no LIKE ? OR patient_name LIKE ? OR patient_phone LIKE ? OR referred_by LIKE ?)")
+            params.extend([q_clean, q_clean, q_clean, q_clean])
+
+        if date_from and date_from.strip():
+            conditions.append("DATE(created_at) >= DATE(?)")
+            params.append(date_from.strip())
+
+        if date_to and date_to.strip():
+            conditions.append("DATE(created_at) <= DATE(?)")
+            params.append(date_to.strip())
+
+        if status and status.upper() != "ALL":
+            conditions.append("payment_status = ?")
+            params.append(status.upper())
+
+        where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+
+        query_sql = f"""
+            SELECT id, voucher_no, patient_name, patient_age, patient_gender,
+                   patient_phone, referred_by, subtotal, discount_type, discount_val,
+                   discount_amount, total_amount, paid_amount, due_amount,
+                   payment_method, payment_status, printed_count, created_at
+            FROM vouchers
+            {where_clause}
+            ORDER BY id DESC
+            LIMIT ?;
+        """
+        params.append(limit)
+        cursor.execute(query_sql, tuple(params))
+        rows = [dict(r) for r in cursor.fetchall()]
+        conn.close()
+        return rows
+
+
+def collect_voucher_due_payment(
+    voucher_id: int,
+    amount_paid: float,
+    payment_method: str = "CASH",
+    remarks: str = "",
+    db_path: str = DB_PATH
+) -> Optional[Dict[str, Any]]:
+    """Record due collection on an existing voucher, update paid/due amounts and status."""
+    with _db_lock:
+        conn = get_connection(db_path)
+        cursor = conn.cursor()
+        try:
+            conn.execute("BEGIN IMMEDIATE TRANSACTION;")
+            cursor.execute("SELECT total_amount, paid_amount, due_amount FROM vouchers WHERE id = ?;", (voucher_id,))
+            row = cursor.fetchone()
+            if not row:
+                conn.rollback()
+                conn.close()
+                return None
+
+            total = float(row["total_amount"])
+            old_paid = float(row["paid_amount"])
+            new_paid = round(old_paid + float(amount_paid), 2)
+            new_due = max(0.0, round(total - new_paid, 2))
+
+            if new_due == 0.0:
+                new_status = "PAID"
+            elif new_paid > 0.0:
+                new_status = "PARTIAL"
+            else:
+                new_status = "DUE"
+
+            rem_text = f"Due collected: Tk {amount_paid:.2f} ({payment_method})"
+            if remarks.strip():
+                rem_text += f" - {remarks.strip()}"
+
+            cursor.execute("""
+                UPDATE vouchers
+                SET paid_amount = ?, due_amount = ?, payment_status = ?,
+                    remarks = CASE 
+                        WHEN remarks IS NULL OR remarks = '' THEN ?
+                        ELSE remarks || ' | ' || ?
+                    END
+                WHERE id = ?;
+            """, (new_paid, new_due, new_status, rem_text, rem_text, voucher_id))
+
+            conn.commit()
+            conn.close()
+            return get_voucher_by_id(voucher_id, db_path=db_path)
+        except Exception as e:
+            conn.rollback()
+            conn.close()
+            raise RuntimeError(f"Error collecting voucher due: {e}")
+
+
+
 # ==============================================================================
 # DAILY SUMMARY & REPORTING
 # ==============================================================================
