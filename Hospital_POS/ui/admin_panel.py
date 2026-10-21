@@ -147,28 +147,43 @@ class AdminPanelWindow:
 
         # Tab 1: Diagnostic Tests Catalog
         tests_tab = ttk.Frame(notebook)
-        notebook.add(tests_tab, text=" 🧪 Diagnostic Tests ")
-        self._build_tests_tab(tests_tab)
+        notebook.add(tests_tab, text="Tests")
+        try:
+            self._build_tests_tab(tests_tab)
+        except Exception as e:
+            tk.Label(tests_tab, text=f"Error loading Tests tab:\n{e}", fg="red", bg="#f8fafc").pack(padx=20, pady=20)
 
         # Tab 2: Daily Reports & Analytics
         reports_tab = ttk.Frame(notebook)
-        notebook.add(reports_tab, text=" 📊 Daily Reports ")
-        self._build_reports_tab(reports_tab)
+        notebook.add(reports_tab, text="Daily Reports")
+        try:
+            self._build_reports_tab(reports_tab)
+        except Exception as e:
+            tk.Label(reports_tab, text=f"Error loading Reports tab:\n{e}", fg="red", bg="#f8fafc").pack(padx=20, pady=20)
 
         # Tab 3: System Settings & Printing
         settings_tab = ttk.Frame(notebook)
-        notebook.add(settings_tab, text=" ⚙️ Settings & Printer ")
-        self._build_settings_tab(settings_tab)
+        notebook.add(settings_tab, text="Settings")
+        try:
+            self._build_settings_tab(settings_tab)
+        except Exception as e:
+            tk.Label(settings_tab, text=f"Error loading Settings tab:\n{e}", fg="red", bg="#f8fafc").pack(padx=20, pady=20)
 
         # Tab 4: Backup & Disaster Recovery
         backup_tab = ttk.Frame(notebook)
-        notebook.add(backup_tab, text=" 💾 3-Layer Backup ")
-        self._build_backup_tab(backup_tab)
+        notebook.add(backup_tab, text="Backup & Vault")
+        try:
+            self._build_backup_tab(backup_tab)
+        except Exception as e:
+            tk.Label(backup_tab, text=f"Error loading Backup tab:\n{e}", fg="red", bg="#f8fafc").pack(padx=20, pady=20)
 
         # Tab 5: License & HWID
         license_tab = ttk.Frame(notebook)
-        notebook.add(license_tab, text=" 🔒 License & HWID ")
-        self._build_license_tab(license_tab)
+        notebook.add(license_tab, text="License")
+        try:
+            self._build_license_tab(license_tab)
+        except Exception as e:
+            tk.Label(license_tab, text=f"Error loading License tab:\n{e}", fg="red", bg="#f8fafc").pack(padx=20, pady=20)
 
     # ==========================================================================
     # TAB 1: DIAGNOSTIC TESTS MANAGEMENT
@@ -236,8 +251,9 @@ class AdminPanelWindow:
             fg="#0f766e"
         ).pack(side=tk.LEFT)
 
-        self.tests_search_var = tk.StringVar()
-        self.tests_search_var.trace("w", lambda *a: self._filter_tests_tree())
+        self._all_tests_cache: list = []  # must be set before trace fires
+        self.tests_search_var = tk.StringVar(master=self.win)
+        self.tests_search_var.trace_add("write", lambda *a: self._filter_tests_tree())
         tests_search_e = tk.Entry(
             search_bar,
             textvariable=self.tests_search_var,
@@ -249,13 +265,11 @@ class AdminPanelWindow:
 
         tk.Label(
             search_bar,
-            text="(type code, name, or category to filter)",
+            text="(type shortcode, name, or category)",
             font=("Segoe UI", 8),
             bg="#f8fafc",
             fg="#64748b"
         ).pack(side=tk.LEFT)
-
-        self._all_tests_cache: list = []  # cache for filtering
 
         # Wrap tree+scrollbar so vertical pack layout of the tab is not broken
         tree_frame = tk.Frame(parent, bg="#f8fafc")
