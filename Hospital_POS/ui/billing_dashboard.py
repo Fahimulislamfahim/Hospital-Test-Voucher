@@ -127,7 +127,7 @@ class BillingDashboard:
         left_col = tk.Frame(body_frame, bg=self.c_bg)
         left_col.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 8))
 
-        right_col = tk.Frame(body_frame, bg=self.c_bg, width=380)
+        right_col = tk.Frame(body_frame, bg=self.c_bg, width=460)
         right_col.pack(side=tk.RIGHT, fill=tk.BOTH, expand=False)
         right_col.pack_propagate(False)
 
@@ -498,10 +498,10 @@ class BillingDashboard:
         # Payment Method & Remarks
         r5 = tk.Frame(card, bg=self.c_card)
         r5.pack(fill=tk.X, pady=4)
-        tk.Label(r5, text="Method:", font=("Segoe UI", 9), bg=self.c_card).pack(side=tk.LEFT)
-        self.method_combo = ttk.Combobox(r5, values=["CASH", "CARD", "bKash / MFS", "DUE"], width=10, state="readonly")
+        tk.Label(r5, text="Method (F6):", font=("Segoe UI", 10), bg=self.c_card).pack(side=tk.LEFT)
+        self.method_combo = ttk.Combobox(r5, values=["CASH", "CARD", "bKash / MFS", "DUE"], width=14, state="readonly")
         self.method_combo.set("CASH")
-        self.method_combo.pack(side=tk.LEFT, padx=(4, 0))
+        self.method_combo.pack(side=tk.LEFT, padx=(6, 0))
 
         # Main Big Action Button: SAVE & PRINT (F12)
         self.save_btn = tk.Button(
@@ -571,13 +571,28 @@ class BillingDashboard:
             activebackground="#0f766e",
             activeforeground="#ffffff",
             relief=tk.FLAT,
-            padx=6,
-            pady=1,
+            padx=8,
+            pady=2,
             command=self.open_history_window
         ).pack(side=tk.RIGHT)
 
         cols = ("vno", "time", "patient", "phone", "total", "status")
-        self.recent_tree = ttk.Treeview(card, columns=cols, show="headings", height=5, selectmode="browse")
+
+        tree_frame = tk.Frame(card, bg=self.c_card)
+        tree_frame.pack(fill=tk.BOTH, expand=True)
+
+        rec_scroll = ttk.Scrollbar(tree_frame, orient=tk.VERTICAL)
+        self.recent_tree = ttk.Treeview(
+            tree_frame,
+            columns=cols,
+            show="headings",
+            height=6,
+            selectmode="browse",
+            yscrollcommand=rec_scroll.set
+        )
+        rec_scroll.config(command=self.recent_tree.yview)
+        rec_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+        self.recent_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
         self.recent_tree.heading("vno", text="Voucher No")
         self.recent_tree.heading("time", text="Time")
@@ -586,18 +601,17 @@ class BillingDashboard:
         self.recent_tree.heading("total", text="Total")
         self.recent_tree.heading("status", text="Status")
 
-        self.recent_tree.column("vno", width=105, anchor=tk.W)
-        self.recent_tree.column("time", width=46, anchor=tk.CENTER)
-        self.recent_tree.column("patient", width=95, anchor=tk.W)
-        self.recent_tree.column("phone", width=85, anchor=tk.W)
-        self.recent_tree.column("total", width=50, anchor=tk.E)
-        self.recent_tree.column("status", width=52, anchor=tk.CENTER)
+        self.recent_tree.column("vno", width=110, anchor=tk.W)
+        self.recent_tree.column("time", width=48, anchor=tk.CENTER)
+        self.recent_tree.column("patient", width=105, anchor=tk.W)
+        self.recent_tree.column("phone", width=92, anchor=tk.W)
+        self.recent_tree.column("total", width=52, anchor=tk.E)
+        self.recent_tree.column("status", width=55, anchor=tk.CENTER)
 
         self.recent_tree.tag_configure("paid_tag", foreground="#059669")
         self.recent_tree.tag_configure("due_tag", foreground="#dc2626")
         self.recent_tree.tag_configure("partial_tag", foreground="#d97706")
 
-        self.recent_tree.pack(fill=tk.BOTH, expand=True)
         self.recent_tree.bind("<Double-Button-1>", lambda e: self._on_double_click_recent())
 
         # Action Toolbar below recent tree
@@ -612,7 +626,7 @@ class BillingDashboard:
             fg="#0f766e",
             activebackground="#e2e8f0",
             relief=tk.FLAT,
-            padx=6,
+            padx=7,
             command=self._inspect_selected_voucher
         ).pack(side=tk.LEFT, padx=(0, 2))
 
@@ -624,7 +638,7 @@ class BillingDashboard:
             fg="#1e293b",
             activebackground="#e2e8f0",
             relief=tk.FLAT,
-            padx=6,
+            padx=7,
             command=self._reprint_selected_recent
         ).pack(side=tk.LEFT, padx=2)
 
@@ -636,7 +650,7 @@ class BillingDashboard:
             fg="#0f766e",
             activebackground="#e2e8f0",
             relief=tk.FLAT,
-            padx=6,
+            padx=7,
             command=self._view_selected_voucher_pdf
         ).pack(side=tk.LEFT, padx=2)
 
@@ -648,7 +662,7 @@ class BillingDashboard:
             fg="#2563eb",
             activebackground="#e2e8f0",
             relief=tk.FLAT,
-            padx=6,
+            padx=7,
             command=self._view_selected_voucher_json
         ).pack(side=tk.LEFT, padx=2)
 
@@ -660,7 +674,7 @@ class BillingDashboard:
             fg="#334155",
             activebackground="#e2e8f0",
             relief=tk.FLAT,
-            padx=5,
+            padx=7,
             command=self._open_vouchers_pdf_folder
         ).pack(side=tk.RIGHT)
 
