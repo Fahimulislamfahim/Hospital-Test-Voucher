@@ -9,11 +9,14 @@ Zero-Mouse Keyboard Workflow:
 - Global Hotkeys:
   * F1: New Patient / Clear Form
   * F2: Jump to Test Search
+  * F3: Focus Patient Name field
   * F4: Focus Discount Field
   * F5: Focus Paid Amount Field
+  * F6: Cycle Payment Method (Cash→Card→bKash→Due)
   * F8: Open Admin Panel
   * F12 or Ctrl+P: Save Voucher & Silent Direct Print
   * Delete or Ctrl+D: Remove selected test from cart
+  * Escape: Close suggestion dropdown
 """
 
 import os
@@ -48,6 +51,7 @@ class BillingDashboard:
         self.cart_items: List[Dict[str, Any]] = []
         self.last_created_voucher: Optional[Dict[str, Any]] = None
         self.autocomplete_tests: List[Dict[str, Any]] = []
+        self._status_clear_after_id: Optional[str] = None
 
         self._setup_styles()
         self._build_ui()
@@ -56,6 +60,11 @@ class BillingDashboard:
         # Load initial data
         self.refresh_recent_vouchers()
         self.reset_form()
+
+        # Start live clock updater
+        self._update_clock()
+        # Auto-refresh recent vouchers list every 60 seconds
+        self._schedule_recent_refresh()
 
     # ==========================================================================
     # STYLES & THEME
@@ -150,22 +159,46 @@ class BillingDashboard:
         )
         self.h_name_lbl.pack(anchor="w")
 
-        # Live Clock & Status
+        # Right info panel
         right_info = tk.Frame(header_frame, bg="#0f172a")
-        right_info.pack(side=tk.RIGHT, pady=8)
+        right_info.pack(side=tk.RIGHT, pady=6)
+
+        # Today's patient counter badge
+        self.today_counter_lbl = tk.Label(
+            right_info,
+            text="Today: 0 patients",
+            font=("Segoe UI", 9, "bold"),
+            fg="#4ade80",
+            bg="#1e3a2f",
+            padx=8,
+            pady=2,
+            relief=tk.FLAT,
+            bd=0
+        )
+        self.today_counter_lbl.pack(side=tk.LEFT, padx=8)
+
+        # Live Clock
+        self.clock_lbl = tk.Label(
+            right_info,
+            text="--:-- --",
+            font=("Segoe UI", 10, "bold"),
+            fg="#e2e8f0",
+            bg="#0f172a"
+        )
+        self.clock_lbl.pack(side=tk.LEFT, padx=6)
 
         self.printer_status_lbl = tk.Label(
             right_info,
-            text=f"🖨️ Printer: {printer_engine.get_target_printer()}",
+            text=f"🖨️ {printer_engine.get_target_printer()}",
             font=("Segoe UI", 9),
             fg="#94a3b8",
             bg="#0f172a"
         )
-        self.printer_status_lbl.pack(side=tk.LEFT, padx=12)
+        self.printer_status_lbl.pack(side=tk.LEFT, padx=8)
 
         admin_btn = tk.Button(
             right_info,
-            text="⚙️ Admin Panel (F8)",
+            text="⚙️ Admin (F8)",
             font=("Segoe UI", 9, "bold"),
             bg="#334155",
             fg="#ffffff",
@@ -498,18 +531,22 @@ class BillingDashboard:
         )
         card.pack(fill=tk.BOTH, expand=True)
 
-        cols = ("vno", "patient", "total", "status")
+        cols = ("vno", "time", "patient", "phone", "total", "status")
         self.recent_tree = ttk.Treeview(card, columns=cols, show="headings", height=5, selectmode="browse")
 
         self.recent_tree.heading("vno", text="Voucher No")
+        self.recent_tree.heading("time", text="Time")
         self.recent_tree.heading("patient", text="Patient")
+        self.recent_tree.heading("phone", text="Phone")
         self.recent_tree.heading("total", text="Total")
         self.recent_tree.heading("status", text="Status")
 
-        self.recent_tree.column("vno", width=110, anchor=tk.W)
-        self.recent_tree.column("patient", width=110, anchor=tk.W)
-        self.recent_tree.column("total", width=60, anchor=tk.E)
-        self.recent_tree.column("status", width=60, anchor=tk.CENTER)
+        self.recent_tree.column("vno", width=105, anchor=tk.W)
+        self.recent_tree.column("time", width=46, anchor=tk.CENTER)
+        self.recent_tree.column("patient", width=95, anchor=tk.W)
+        self.recent_tree.column("phone", width=85, anchor=tk.W)
+        self.recent_tree.column("total", width=50, anchor=tk.E)
+        self.recent_tree.column("status", width=52, anchor=tk.CENTER)
 
         self.recent_tree.pack(fill=tk.BOTH, expand=True)
         self.recent_tree.bind("<Double-Button-1>", lambda e: self._on_double_click_recent())
@@ -571,24 +608,28 @@ class BillingDashboard:
         bar.pack(fill=tk.X, side=tk.BOTTOM)
 
         shortcuts = [
-            ("F1", "New Patient"),
-            ("F2", "Search Test"),
+            ("F1", "New"),
+            ("F2", "Search"),
+            ("F3", "Name"),
             ("F4", "Discount"),
             ("F5", "Paid"),
+            ("F6", "Method"),
             ("F8", "Admin"),
-            ("F9", "Backup Now"),
+            ("F9", "Backup"),
+            ("F11", "Reprint"),
             ("F12", "SAVE & PRINT"),
-            ("Del", "Remove Test"),
+            ("Del", "Remove"),
+            ("Esc", "Close Suggestions"),
         ]
 
         for key, desc in shortcuts:
-            pill = tk.Frame(bar, bg="#334155", padx=6, pady=2)
-            pill.pack(side=tk.LEFT, padx=3, pady=4)
+            pill = tk.Frame(bar, bg="#334155", padx=5, pady=2)
+            pill.pack(side=tk.LEFT, padx=2, pady=4)
             tk.Label(pill, text=key, font=("Segoe UI", 8, "bold"), bg="#334155", fg="#38bdf8").pack(side=tk.LEFT)
-            tk.Label(pill, text=f": {desc}", font=("Segoe UI", 8), bg="#334155", fg="#cbd5e1").pack(side=tk.LEFT)
+            tk.Label(pill, text=f":{desc}", font=("Segoe UI", 8), bg="#334155", fg="#cbd5e1").pack(side=tk.LEFT)
 
-        # Status note
-        self.footer_status = tk.Label(bar, text="Ready", font=("Segoe UI", 8, "italic"), bg="#1e293b", fg="#94a3b8")
+        # Status note — persistent, colour-coded
+        self.footer_status = tk.Label(bar, text="✔ System Ready", font=("Segoe UI", 8, "italic"), bg="#1e293b", fg="#4ade80")
         self.footer_status.pack(side=tk.RIGHT, padx=6)
 
     # ==========================================================================
@@ -598,8 +639,10 @@ class BillingDashboard:
     def _bind_global_shortcuts(self):
         self.root.bind("<F1>", lambda e: self.reset_form())
         self.root.bind("<F2>", lambda e: self.search_entry.focus_set())
+        self.root.bind("<F3>", lambda e: self.name_entry.focus_set())
         self.root.bind("<F4>", lambda e: self.discount_entry.focus_set())
         self.root.bind("<F5>", lambda e: self.paid_entry.focus_set())
+        self.root.bind("<F6>", lambda e: self._cycle_payment_method())
         self.root.bind("<F8>", lambda e: self._open_admin())
         self.root.bind("<F9>", lambda e: self._trigger_backup())
         self.root.bind("<F11>", lambda e: self._reprint_last_voucher())
@@ -608,6 +651,7 @@ class BillingDashboard:
         self.root.bind("<Control-P>", lambda e: self.save_and_print_voucher())
         self.root.bind("<Delete>", lambda e: self._remove_selected_cart_item())
         self.root.bind("<Control-d>", lambda e: self._remove_selected_cart_item())
+        self.root.bind("<Escape>", lambda e: self._hide_suggest())
 
     # ==========================================================================
     # AUTOCOMPLETE LOGIC (ZERO-MOUSE OPTIMIZATION)
@@ -708,13 +752,15 @@ class BillingDashboard:
     # ==========================================================================
 
     def _add_test_to_cart(self, test: Dict[str, Any]):
-        # Check if already in cart -> increment quantity
+        # Check if already in cart -> increment quantity with user notice
         for item in self.cart_items:
             if item["test_id"] == test["id"]:
                 item["quantity"] += 1
                 item["item_total"] = round(item["price"] * item["quantity"], 2)
                 self._refresh_cart_view()
                 self._recalculate()
+                self._set_status(f"⟳  Qty updated: [{test['code']}] {test['name']} — Qty {item['quantity']}", color="#f59e0b")
+                self._flash_cart()
                 return
 
         # Add new line item
@@ -729,6 +775,8 @@ class BillingDashboard:
         })
         self._refresh_cart_view()
         self._recalculate()
+        self._set_status(f"✔ Added: [{test['code']}] {test['name']}  —  Tk {test['price']:.2f}", color="#4ade80")
+        self._flash_cart()
 
     def _remove_selected_cart_item(self):
         selected = self.cart_tree.selection()
@@ -803,6 +851,63 @@ class BillingDashboard:
             self.due_lbl.configure(fg="#dc2626")  # Alert red
         else:
             self.due_lbl.configure(fg="#059669")  # Green
+
+    # ==========================================================================
+    # LIVE CLOCK & COUNTER HELPERS
+    # ==========================================================================
+
+    def _update_clock(self):
+        """Refresh live clock label and today's patient counter every second."""
+        now = datetime.now()
+        self.clock_lbl.configure(text=now.strftime("%I:%M:%S %p"))
+        # Update today's patient count every minute (on the :00 second)
+        if now.second == 0 or not hasattr(self, "_last_counter_minute") or self._last_counter_minute != now.minute:
+            self._last_counter_minute = now.minute
+            self._refresh_today_counter()
+        self.root.after(1000, self._update_clock)
+
+    def _refresh_today_counter(self):
+        """Query today's voucher count and update the header badge."""
+        try:
+            summary = database.get_daily_summary(datetime.now().strftime("%Y-%m-%d"))
+            count = summary.get("total_vouchers", 0)
+            self.today_counter_lbl.configure(text=f"Today: {count} patient{'s' if count != 1 else ''}")
+        except Exception:
+            pass
+
+    def _schedule_recent_refresh(self):
+        """Auto-refresh recent vouchers list every 60 seconds."""
+        self.refresh_recent_vouchers()
+        self.root.after(60000, self._schedule_recent_refresh)
+
+    def _set_status(self, msg: str, color: str = "#4ade80", auto_clear_ms: int = 4000):
+        """Set footer status bar with auto-clear after timeout."""
+        self.footer_status.configure(text=msg, fg=color)
+        if self._status_clear_after_id:
+            try:
+                self.root.after_cancel(self._status_clear_after_id)
+            except Exception:
+                pass
+        self._status_clear_after_id = self.root.after(
+            auto_clear_ms, lambda: self.footer_status.configure(text="✔ System Ready", fg="#4ade80")
+        )
+
+    def _flash_cart(self):
+        """Briefly highlight the cart item count label to confirm an add."""
+        orig_fg = "#0f766e"
+        self.item_count_lbl.configure(fg="#f59e0b")
+        self.root.after(350, lambda: self.item_count_lbl.configure(fg=orig_fg))
+
+    def _cycle_payment_method(self):
+        """F6: Cycle through payment methods sequentially."""
+        methods = ["CASH", "CARD", "bKash / MFS", "DUE"]
+        current = self.method_combo.get()
+        try:
+            next_idx = (methods.index(current) + 1) % len(methods)
+        except ValueError:
+            next_idx = 0
+        self.method_combo.set(methods[next_idx])
+        self._set_status(f"💳 Payment Method: {methods[next_idx]}", color="#38bdf8", auto_clear_ms=2000)
 
     # ==========================================================================
     # SAVE & SILENT PRINT ACTION
@@ -890,7 +995,12 @@ class BillingDashboard:
             if pdf_path: sync_notes.append("PDF")
             if json_path: sync_notes.append("JSON")
             note_str = f" + {' & '.join(sync_notes)} Saved" if sync_notes else ""
-            self.footer_status.configure(text=f"✅ Saved & Printed: {v_no}{note_str} ({print_res['message']})")
+            self._set_status(
+                f"✅ Saved & Printed: {v_no}{note_str}  |  {print_res['message']}",
+                color="#4ade80",
+                auto_clear_ms=8000
+            )
+            self._refresh_today_counter()
 
             # 4. Refresh Recent List & Reset for Next Patient
             self.refresh_recent_vouchers()
@@ -942,9 +1052,13 @@ class BillingDashboard:
         self.recent_tree.delete(*self.recent_tree.get_children())
         vouchers = database.get_recent_vouchers(limit=25)
         for v in vouchers:
+            raw_time = str(v.get("created_at", ""))
+            disp_time = raw_time[11:16] if len(raw_time) >= 16 else ""  # HH:MM
             self.recent_tree.insert("", tk.END, values=(
                 v["voucher_no"],
+                disp_time,
                 v["patient_name"],
+                v.get("patient_phone", ""),
                 f"{v['total_amount']:.0f}",
                 v["payment_status"]
             ))

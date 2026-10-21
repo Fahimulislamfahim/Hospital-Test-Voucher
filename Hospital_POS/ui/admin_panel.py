@@ -224,7 +224,39 @@ class AdminPanelWindow:
             command=self._refresh_tests_tree
         ).pack(side=tk.RIGHT, padx=6)
 
-        # Tests Table
+        # Live Search / Filter Bar
+        search_bar = tk.Frame(parent, bg="#f8fafc", pady=4, padx=6)
+        search_bar.pack(fill=tk.X)
+
+        tk.Label(
+            search_bar,
+            text="🔍 Filter:",
+            font=("Segoe UI", 9, "bold"),
+            bg="#f8fafc",
+            fg="#0f766e"
+        ).pack(side=tk.LEFT)
+
+        self.tests_search_var = tk.StringVar()
+        self.tests_search_var.trace("w", lambda *a: self._filter_tests_tree())
+        tests_search_e = tk.Entry(
+            search_bar,
+            textvariable=self.tests_search_var,
+            font=("Segoe UI", 10),
+            bd=1,
+            relief=tk.SOLID
+        )
+        tests_search_e.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(6, 8), ipady=3)
+
+        tk.Label(
+            search_bar,
+            text="(type code, name, or category to filter)",
+            font=("Segoe UI", 8),
+            bg="#f8fafc",
+            fg="#64748b"
+        ).pack(side=tk.LEFT)
+
+        self._all_tests_cache: list = []  # cache for filtering
+
         cols = ("id", "code", "name", "cat", "price", "cost", "sample", "delivery")
         self.tests_tree = ttk.Treeview(parent, columns=cols, show="headings", selectmode="browse")
 
@@ -255,8 +287,24 @@ class AdminPanelWindow:
         self._refresh_tests_tree()
 
     def _refresh_tests_tree(self):
+        self._all_tests_cache = database.get_all_tests(active_only=True)
+        self._populate_tests_tree(self._all_tests_cache)
+
+    def _filter_tests_tree(self):
+        query = self.tests_search_var.get().strip().lower()
+        if not query:
+            self._populate_tests_tree(self._all_tests_cache)
+            return
+        filtered = [
+            t for t in self._all_tests_cache
+            if query in t["code"].lower()
+            or query in t["name"].lower()
+            or query in t.get("category_name", "").lower()
+        ]
+        self._populate_tests_tree(filtered)
+
+    def _populate_tests_tree(self, tests: list):
         self.tests_tree.delete(*self.tests_tree.get_children())
-        tests = database.get_all_tests(active_only=True)
         for t in tests:
             self.tests_tree.insert("", tk.END, values=(
                 t["id"],
@@ -409,22 +457,51 @@ class AdminPanelWindow:
         tk.Label(ctrl_frame, text="Date (YYYY-MM-DD):", bg="#f8fafc", font=("Segoe UI", 10, "bold")).pack(side=tk.LEFT)
         self.report_date_e = tk.Entry(ctrl_frame, font=("Segoe UI", 10), width=12, bd=1, relief=tk.SOLID)
         self.report_date_e.insert(0, datetime.now().strftime("%Y-%m-%d"))
-        self.report_date_e.pack(side=tk.LEFT, padx=(6, 12), ipady=2)
+        self.report_date_e.pack(side=tk.LEFT, padx=(6, 6), ipady=2)
+
+        # Quick date navigation buttons
+        tk.Button(
+            ctrl_frame, text="◄",
+            font=("Segoe UI", 9, "bold"),
+            bg="#e2e8f0", relief=tk.FLAT, padx=6,
+            command=self._date_prev_day
+        ).pack(side=tk.LEFT, padx=1)
+
+        tk.Button(
+            ctrl_frame, text="Today",
+            font=("Segoe UI", 9, "bold"),
+            bg="#0d9488", fg="#ffffff", relief=tk.FLAT, padx=8,
+            command=self._date_today
+        ).pack(side=tk.LEFT, padx=2)
+
+        tk.Button(
+            ctrl_frame, text="Yesterday",
+            font=("Segoe UI", 9),
+            bg="#e2e8f0", relief=tk.FLAT, padx=8,
+            command=self._date_yesterday
+        ).pack(side=tk.LEFT, padx=2)
+
+        tk.Button(
+            ctrl_frame, text="►",
+            font=("Segoe UI", 9, "bold"),
+            bg="#e2e8f0", relief=tk.FLAT, padx=6,
+            command=self._date_next_day
+        ).pack(side=tk.LEFT, padx=1)
 
         tk.Button(
             ctrl_frame,
             text="🔍 Generate Report",
             font=("Segoe UI", 9, "bold"),
-            bg="#0d9488",
+            bg="#0f172a",
             fg="#ffffff",
             relief=tk.FLAT,
             padx=10,
             command=self._load_daily_report
-        ).pack(side=tk.LEFT)
+        ).pack(side=tk.LEFT, padx=(10, 2))
 
         tk.Button(
             ctrl_frame,
-            text="📄 Export Daily Audit PDF",
+            text="📄 Export PDF",
             font=("Segoe UI", 9, "bold"),
             bg="#0f766e",
             fg="#ffffff",
@@ -433,11 +510,11 @@ class AdminPanelWindow:
             relief=tk.FLAT,
             padx=12,
             command=self._export_daily_audit_pdf
-        ).pack(side=tk.LEFT, padx=8)
+        ).pack(side=tk.LEFT, padx=4)
 
         tk.Button(
             ctrl_frame,
-            text="📂 Open Reports Folder",
+            text="📂 Reports Folder",
             font=("Segoe UI", 9),
             bg="#e2e8f0",
             fg="#1e293b",
@@ -553,19 +630,55 @@ class AdminPanelWindow:
             if pdf_path and os.path.exists(pdf_path):
                 if messagebox.askyesno(
                     "PDF Generated Successfully",
-                    f"Daily Audit PDF report generated successfully!\n\n"
-                    f"Saved at:\n{pdf_path}\n\n"
-                    f"Do you want to open and view the PDF report now?",
+                    f"Daily Audit PDF report generated!\n\nSaved at:\n{pdf_path}\n\nOpen now?",
                     parent=self.win
                 ):
                     try:
                         os.startfile(pdf_path)
                     except Exception as e:
-                        messagebox.showwarning("Open File", f"PDF was created but could not be launched directly:\n{e}", parent=self.win)
+                        messagebox.showwarning("Open File", f"PDF created but could not be launched:\n{e}", parent=self.win)
             else:
                 messagebox.showerror("Export Failed", "PDF generator could not produce the report file.", parent=self.win)
         except Exception as e:
             messagebox.showerror("Export Error", f"Failed to generate Daily Audit PDF:\n{e}", parent=self.win)
+
+    def _date_today(self):
+        """Set report date to today and reload."""
+        self.report_date_e.delete(0, tk.END)
+        self.report_date_e.insert(0, datetime.now().strftime("%Y-%m-%d"))
+        self._load_daily_report()
+
+    def _date_yesterday(self):
+        """Set report date to yesterday and reload."""
+        from datetime import timedelta
+        yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+        self.report_date_e.delete(0, tk.END)
+        self.report_date_e.insert(0, yesterday)
+        self._load_daily_report()
+
+    def _date_prev_day(self):
+        """Move report date one day back."""
+        from datetime import timedelta
+        try:
+            current = datetime.strptime(self.report_date_e.get().strip(), "%Y-%m-%d")
+            prev_day = (current - timedelta(days=1)).strftime("%Y-%m-%d")
+            self.report_date_e.delete(0, tk.END)
+            self.report_date_e.insert(0, prev_day)
+            self._load_daily_report()
+        except ValueError:
+            self._date_today()
+
+    def _date_next_day(self):
+        """Move report date one day forward."""
+        from datetime import timedelta
+        try:
+            current = datetime.strptime(self.report_date_e.get().strip(), "%Y-%m-%d")
+            next_day = (current + timedelta(days=1)).strftime("%Y-%m-%d")
+            self.report_date_e.delete(0, tk.END)
+            self.report_date_e.insert(0, next_day)
+            self._load_daily_report()
+        except ValueError:
+            self._date_today()
 
     def _open_directory(self, path: str):
         if not path:
@@ -945,7 +1058,17 @@ class AdminPanelWindow:
             pady=10,
             command=self._save_settings
         )
-        save_btn.pack(fill=tk.X, pady=(10, 20))
+        save_btn.pack(fill=tk.X, pady=(10, 4))
+
+        # Inline save confirmation label
+        self.settings_saved_lbl = tk.Label(
+            form_frame,
+            text="",
+            font=("Segoe UI", 9, "italic"),
+            bg="#f8fafc",
+            fg="#059669"
+        )
+        self.settings_saved_lbl.pack(anchor="w", pady=(0, 16))
 
     def _save_settings(self):
         for key, entry in self.setting_entries.items():
@@ -963,7 +1086,15 @@ class AdminPanelWindow:
         database.set_setting("paper_size", paper)
         database.set_setting("mongo_auto_sync", str(self.mongo_auto_var.get()))
 
-        messagebox.showinfo("Settings Saved", "System settings, MongoDB config, and directory paths updated successfully!", parent=self.win)
+        # Show inline confirmation instead of modal popup
+        if hasattr(self, "settings_saved_lbl"):
+            self.settings_saved_lbl.configure(
+                text=f"✅ All settings saved successfully at {datetime.now().strftime('%H:%M:%S')}"
+            )
+            self.win.after(5000, lambda: self.settings_saved_lbl.configure(text=""))
+        else:
+            messagebox.showinfo("Settings Saved", "System settings updated successfully!", parent=self.win)
+
         if self.on_settings_updated:
             self.on_settings_updated()
 
