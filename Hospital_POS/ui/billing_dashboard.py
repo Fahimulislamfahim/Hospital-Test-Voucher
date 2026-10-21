@@ -27,6 +27,7 @@ import database
 import printer_engine
 import backup_manager
 import pdf_generator
+import data_vault
 from config import APP_NAME, APP_VERSION
 
 
@@ -531,6 +532,18 @@ class BillingDashboard:
 
         tk.Button(
             rec_actions,
+            text="📜 View JSON",
+            font=("Segoe UI", 8, "bold"),
+            bg="#f1f5f9",
+            fg="#2563eb",
+            activebackground="#e2e8f0",
+            relief=tk.FLAT,
+            padx=8,
+            command=self._view_selected_voucher_json
+        ).pack(side=tk.LEFT, padx=4)
+
+        tk.Button(
+            rec_actions,
             text="📂 PDF Folder",
             font=("Segoe UI", 8),
             bg="#f1f5f9",
@@ -539,7 +552,19 @@ class BillingDashboard:
             relief=tk.FLAT,
             padx=8,
             command=self._open_vouchers_pdf_folder
-        ).pack(side=tk.LEFT)
+        ).pack(side=tk.LEFT, padx=4)
+
+        tk.Button(
+            rec_actions,
+            text="📂 JSON Folder",
+            font=("Segoe UI", 8),
+            bg="#f1f5f9",
+            fg="#334155",
+            activebackground="#e2e8f0",
+            relief=tk.FLAT,
+            padx=8,
+            command=self._open_vouchers_json_folder
+        ).pack(side=tk.LEFT, padx=4)
 
     def _build_shortcut_bar(self):
         bar = tk.Frame(self.root, bg="#1e293b", height=32, padx=12)
@@ -841,20 +866,31 @@ class BillingDashboard:
             )
             self.last_created_voucher = voucher
 
-            # 2. Automatically generate and archive PDF copy
+            # 2. Automatically generate and archive PDF & JSON text copies
             pdf_path = None
             try:
                 pdf_path = pdf_generator.generate_voucher_pdf(voucher)
             except Exception as pdf_err:
                 print(f"[Dashboard] Warning: PDF archiving failed: {pdf_err}")
 
+            json_path = None
+            try:
+                json_path = data_vault.save_voucher_to_json(voucher)
+                # Background async sync to MongoDB Atlas if configured
+                data_vault.trigger_async_mongo_sync(voucher)
+            except Exception as json_err:
+                print(f"[Dashboard] Warning: JSON archiving failed: {json_err}")
+
             # 3. Trigger Silent Print (No Dialogs!)
             print_res = printer_engine.print_voucher_silently(voucher)
             
             # Show toast / footer update
             v_no = voucher["voucher_no"]
-            pdf_msg = " + PDF Archived" if pdf_path else ""
-            self.footer_status.configure(text=f"✅ Saved & Printed: {v_no}{pdf_msg} ({print_res['message']})")
+            sync_notes = []
+            if pdf_path: sync_notes.append("PDF")
+            if json_path: sync_notes.append("JSON")
+            note_str = f" + {' & '.join(sync_notes)} Saved" if sync_notes else ""
+            self.footer_status.configure(text=f"✅ Saved & Printed: {v_no}{note_str} ({print_res['message']})")
 
             # 4. Refresh Recent List & Reset for Next Patient
             self.refresh_recent_vouchers()
@@ -953,6 +989,36 @@ class BillingDashboard:
             os.startfile(pdf_dir)
         except Exception as e:
             messagebox.showerror("Error", f"Could not open Vouchers PDF folder:\n{e}")
+
+    def _view_selected_voucher_json(self):
+        selected = self.recent_tree.selection()
+        if not selected:
+            messagebox.showinfo("Select Voucher", "Please select a voucher from the list first.")
+            return
+        item_vals = self.recent_tree.item(selected[0])["values"]
+        v_no = item_vals[0]
+        v = database.get_voucher_by_no(v_no)
+        if not v:
+            messagebox.showerror("Error", f"Voucher {v_no} not found.")
+            return
+
+        json_path = data_vault.save_voucher_to_json(v)
+        if json_path and os.path.exists(json_path):
+            try:
+                os.startfile(json_path)
+            except Exception as e:
+                messagebox.showerror("Error", f"Could not launch text/JSON viewer:\n{e}")
+        else:
+            messagebox.showerror("Error", f"Could not generate or find JSON for voucher {v_no}.")
+
+    def _open_vouchers_json_folder(self):
+        json_dir = data_vault.get_voucher_json_directory()
+        try:
+            if not os.path.exists(json_dir):
+                os.makedirs(json_dir, exist_ok=True)
+            os.startfile(json_dir)
+        except Exception as e:
+            messagebox.showerror("Error", f"Could not open JSON text folder:\n{e}")
 
     def _trigger_backup(self):
         self.footer_status.configure(text="⏳ Executing 3-layer backup...")

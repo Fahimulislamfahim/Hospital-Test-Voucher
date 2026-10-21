@@ -154,9 +154,13 @@ def _seed_default_data(conn: sqlite3.Connection):
         ("backup_local_path", r"D:\Hospital_POS_Data\Backups"),
         ("voucher_pdf_dir", r"D:\Hospital_POS_Data\Vouchers_PDF"),
         ("reports_pdf_dir", r"D:\Hospital_POS_Data\Daily_Reports"),
+        ("voucher_json_dir", r"D:\Hospital_POS_Data\Vouchers_JSON"),
         ("usb_drive_label", "HOSPITAL_BAK"),
         ("telegram_bot_token", ""),
         ("telegram_chat_id", ""),
+        ("mongo_atlas_uri", ""),
+        ("mongo_db_name", "Hospital_POS_Cloud"),
+        ("mongo_auto_sync", "1"),
         ("admin_pin", "1234"),
     ]
 
@@ -688,6 +692,156 @@ def get_all_settings(db_path: str = DB_PATH) -> Dict[str, str]:
         rows = cursor.fetchall()
         conn.close()
         return {r["key"]: r["value"] for r in rows}
+
+
+# ==============================================================================
+# RESTORE & CLOUD MIGRATION UTILITIES
+# ==============================================================================
+
+def restore_or_upsert_voucher(
+    voucher_data: Dict[str, Any],
+    overwrite_existing: bool = False,
+    db_path: str = DB_PATH
+) -> bool:
+    """
+    Safely restore or upsert a voucher record from JSON or MongoDB Atlas into SQLite.
+    Preserves the original voucher_no, patient details, timestamps, and line items.
+    Returns True if inserted/updated, False if skipped because it already exists.
+    """
+    voucher_no = voucher_data.get("voucher_no")
+    if not voucher_no:
+        return False
+
+    # Support both flat and nested JSON structures
+    p = voucher_data.get("patient", {})
+    patient_name = voucher_data.get("patient_name") or p.get("name", "Unknown Patient")
+    patient_age = voucher_data.get("patient_age") if "patient_age" in voucher_data else p.get("age", 0)
+    try:
+        patient_age = int(patient_age)
+    except (ValueError, TypeError):
+        patient_age = 0
+    patient_gender = voucher_data.get("patient_gender") or p.get("gender", "Male")
+    patient_phone = voucher_data.get("patient_phone") or p.get("phone", "")
+    referred_by = voucher_data.get("referred_by") or p.get("referred_by", "Self / General")
+
+    f = voucher_data.get("financials", {})
+    subtotal = float(voucher_data.get("subtotal", f.get("subtotal", 0.0)))
+    discount_type = voucher_data.get("discount_type", f.get("discount_type", "fixed"))
+    discount_val = float(voucher_data.get("discount_val", f.get("discount_val", 0.0)))
+    discount_amount = float(voucher_data.get("discount_amount", f.get("discount_amount", 0.0)))
+    total_amount = float(voucher_data.get("total_amount", f.get("total_amount", 0.0)))
+    paid_amount = float(voucher_data.get("paid_amount", f.get("paid_amount", 0.0)))
+    due_amount = float(voucher_data.get("due_amount", f.get("due_amount", 0.0)))
+    payment_method = voucher_data.get("payment_method", f.get("payment_method", "CASH"))
+    payment_status = voucher_data.get("payment_status", f.get("payment_status", "PAID"))
+    remarks = voucher_data.get("remarks", "")
+    created_by = voucher_data.get("created_by", "Reception")
+    created_at = voucher_data.get("created_at") or datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    items = voucher_data.get("items", [])
+
+    with _db_lock:
+        conn = get_connection(db_path)
+        cursor = conn.cursor()
+        try:
+            conn.execute("BEGIN IMMEDIATE TRANSACTION;")
+            cursor.execute("SELECT id FROM vouchers WHERE voucher_no = ?;", (voucher_no,))
+            existing = cursor.fetchone()
+
+            if existing:
+                if not overwrite_existing:
+                    conn.rollback()
+                    return False
+                existing_id = existing["id"]
+                cursor.execute("DELETE FROM voucher_items WHERE voucher_id = ?;", (existing_id,))
+                cursor.execute("DELETE FROM vouchers WHERE id = ?;", (existing_id,))
+
+            cursor.execute("""
+                INSERT INTO vouchers (
+                    voucher_no, patient_name, patient_age, patient_gender, patient_phone,
+                    referred_by, subtotal, discount_type, discount_val, discount_amount,
+                    total_amount, paid_amount, due_amount, payment_method, payment_status,
+                    remarks, created_by, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+            """, (
+                voucher_no, str(patient_name).strip(), patient_age, str(patient_gender),
+                str(patient_phone).strip(), str(referred_by).strip(),
+                subtotal, discount_type, discount_val, discount_amount,
+                total_amount, paid_amount, due_amount, payment_method, payment_status,
+                remarks, created_by, created_at
+            ))
+            new_vid = cursor.lastrowid
+
+            for it in items:
+                cursor.execute("""
+                    INSERT INTO voucher_items (
+                        voucher_id, test_id, test_code, test_name, unit_price, quantity, item_total
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?);
+                """, (
+                    new_vid,
+                    it.get("test_id"),
+                    str(it.get("test_code", "")),
+                    str(it.get("test_name", "")),
+                    float(it.get("unit_price", 0.0)),
+                    int(it.get("quantity", 1)),
+                    float(it.get("item_total", 0.0))
+                ))
+
+            conn.commit()
+            return True
+        except Exception as e:
+            conn.rollback()
+            raise RuntimeError(f"Failed to restore voucher {voucher_no}: {e}")
+        finally:
+            conn.close()
+
+
+def get_all_vouchers_with_items(db_path: str = DB_PATH) -> List[Dict[str, Any]]:
+    """Retrieve all vouchers with their complete line items for JSON export and cloud backup."""
+    with _db_lock:
+        conn = get_connection(db_path)
+        cursor = conn.cursor()
+        cursor.execute("SELECT id FROM vouchers ORDER BY id ASC;")
+        v_ids = [r["id"] for r in cursor.fetchall()]
+        conn.close()
+
+    result = []
+    for vid in v_ids:
+        v = get_voucher_by_id(vid, db_path=db_path)
+        if v:
+            result.append(v)
+    return result
+
+
+def get_full_database_dump_data(db_path: str = DB_PATH) -> Dict[str, Any]:
+    """Extract complete database as structured dictionaries ready for JSON text serialization."""
+    with _db_lock:
+        conn = get_connection(db_path)
+        cursor = conn.cursor()
+
+        cursor.execute("SELECT * FROM categories ORDER BY id ASC;")
+        categories = [dict(r) for r in cursor.fetchall()]
+
+        cursor.execute("SELECT * FROM tests ORDER BY id ASC;")
+        tests = [dict(r) for r in cursor.fetchall()]
+
+        cursor.execute("SELECT key, value FROM app_settings;")
+        settings = {r["key"]: r["value"] for r in cursor.fetchall()}
+        conn.close()
+
+    vouchers = get_all_vouchers_with_items(db_path=db_path)
+
+    return {
+        "format": "HOSPITAL_POS_FULL_JSON_BACKUP",
+        "version": "1.0.0",
+        "exported_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "total_vouchers": len(vouchers),
+        "total_tests": len(tests),
+        "settings": settings,
+        "categories": categories,
+        "tests": tests,
+        "vouchers": vouchers
+    }
 
 
 # Auto-initialize database schema when database.py is imported or run

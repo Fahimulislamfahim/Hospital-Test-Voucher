@@ -27,5 +27,9 @@ Pillow==9.5.0
 # Vector PDF Generation Engine for Vouchers & Audit Reports (Python 3.8 compatible)
 reportlab==3.6.13
 
+# Cloud Database Synchronization (MongoDB Atlas & SRV DNS support)
+pymongo==3.13.0
+dnspython>=1.16.0
+
 # Executable Packaging for Windows 7 32-bit
 pyinstaller==5.13.2

@@ -35,11 +35,15 @@ LOCAL_BACKUP_DIR = os.path.join(DEFAULT_STORAGE_ROOT, "Backups")
 DEFAULT_BACKUP_DIR = LOCAL_BACKUP_DIR
 DEFAULT_VOUCHER_PDF_DIR = os.path.join(DEFAULT_STORAGE_ROOT, "Vouchers_PDF")
 DEFAULT_REPORTS_PDF_DIR = os.path.join(DEFAULT_STORAGE_ROOT, "Daily_Reports")
+DEFAULT_VOUCHER_JSON_DIR = os.path.join(DEFAULT_STORAGE_ROOT, "Vouchers_JSON")
 USB_BACKUP_FOLDER_NAME = "Hospital_POS_Backup"
 
-# Cloud Backup (Telegram Bot) - Can be overridden in database settings table
+# Cloud Backup (Telegram Bot & MongoDB Atlas) - Can be overridden in database settings table
 DEFAULT_TELEGRAM_BOT_TOKEN = ""
 DEFAULT_TELEGRAM_CHAT_ID = ""
+DEFAULT_MONGO_URI = ""
+DEFAULT_MONGO_DB = "Hospital_POS_Cloud"
+DEFAULT_MONGO_COLLECTION = "vouchers"
 
 # Remote License Verification API endpoint (Vercel / MongoDB Serverless)
 LICENSE_API_URL = "https://hospital-pos-license.vercel.app/api/activate"

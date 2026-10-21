@@ -21,12 +21,16 @@ import printer_engine
 import backup_manager
 import hwid_license
 import pdf_generator
+import data_vault
 from config import (
     APP_NAME,
     DEFAULT_STORAGE_ROOT,
     DEFAULT_BACKUP_DIR,
     DEFAULT_VOUCHER_PDF_DIR,
-    DEFAULT_REPORTS_PDF_DIR
+    DEFAULT_REPORTS_PDF_DIR,
+    DEFAULT_VOUCHER_JSON_DIR,
+    DEFAULT_MONGO_URI,
+    DEFAULT_MONGO_DB
 )
 
 
@@ -596,9 +600,10 @@ class AdminPanelWindow:
         backup_dir = os.path.join(root_dir, "Backups")
         voucher_dir = os.path.join(root_dir, "Vouchers_PDF")
         reports_dir = os.path.join(root_dir, "Daily_Reports")
+        json_dir = os.path.join(root_dir, "Vouchers_JSON")
 
         try:
-            for d in (root_dir, backup_dir, voucher_dir, reports_dir):
+            for d in (root_dir, backup_dir, voucher_dir, reports_dir, json_dir):
                 os.makedirs(d, exist_ok=True)
 
             self.setting_entries["backup_local_path"].delete(0, tk.END)
@@ -610,13 +615,18 @@ class AdminPanelWindow:
             self.setting_entries["reports_pdf_dir"].delete(0, tk.END)
             self.setting_entries["reports_pdf_dir"].insert(0, reports_dir)
 
+            if "voucher_json_dir" in self.setting_entries:
+                self.setting_entries["voucher_json_dir"].delete(0, tk.END)
+                self.setting_entries["voucher_json_dir"].insert(0, json_dir)
+
             messagebox.showinfo(
                 "Subfolders Initialized",
-                f"All 3 dedicated storage folders have been configured and verified on disk:\n\n"
+                f"All 4 dedicated storage folders have been configured and verified on disk:\n\n"
                 f"📁 Root: {root_dir}\n"
                 f"├─ 🛡️ Backups: {backup_dir}\n"
                 f"├─ 📄 Voucher PDFs: {voucher_dir}\n"
-                f"└─ 📊 Daily Reports: {reports_dir}\n\n"
+                f"├─ 📊 Daily Reports: {reports_dir}\n"
+                f"└─ 📜 JSON Text Vault: {json_dir}\n\n"
                 f"Click 'Save Application Settings' to apply these paths permanently.",
                 parent=self.win
             )
@@ -776,6 +786,16 @@ class AdminPanelWindow:
             default_val=reports_pdf_val
         )
 
+        # 4. Structured JSON Text Subfolder
+        voucher_json_val = settings.get("voucher_json_dir", DEFAULT_VOUCHER_JSON_DIR)
+        self._add_directory_row(
+            parent_frame=storage_frame,
+            key="voucher_json_dir",
+            label_text="4. Structured JSON / Text Data Folder:",
+            description="Replicates every voucher as human-readable, lossless JSON text files for backup and restore.",
+            default_val=voucher_json_val
+        )
+
         # ----------------------------------------------------------------------
         # Card 2: Hospital Identity & Branding
         # ----------------------------------------------------------------------
@@ -838,6 +858,80 @@ class AdminPanelWindow:
         self.paper_cb.set("80mm (Thermal POS)" if settings.get("paper_size", "80mm") == "80mm" else "A5 (Laser / Slip)")
         self.paper_cb.pack(fill=tk.X, pady=(0, 8))
 
+        # ----------------------------------------------------------------------
+        # Card 4: MongoDB Atlas Cloud Synchronization
+        # ----------------------------------------------------------------------
+        mongo_frame = tk.LabelFrame(
+            form_frame,
+            text=" ☁️ MongoDB Atlas Cloud Synchronization ",
+            font=("Segoe UI", 10, "bold"),
+            bg="#ffffff",
+            fg="#0f766e",
+            padx=14,
+            pady=12,
+            bd=1,
+            relief=tk.SOLID
+        )
+        mongo_frame.pack(fill=tk.X, pady=(0, 14))
+
+        tk.Label(
+            mongo_frame,
+            text="Connect directly to MongoDB Atlas cluster for real-time cloud data replication & two-way restore:",
+            font=("Segoe UI", 9),
+            bg="#ffffff",
+            fg="#475569"
+        ).pack(anchor="w", pady=(0, 8))
+
+        # URI
+        tk.Label(mongo_frame, text="MongoDB Atlas Connection URI (mongodb+srv://...):", font=("Segoe UI", 9, "bold"), bg="#ffffff").pack(anchor="w")
+        self.mongo_uri_e = tk.Entry(mongo_frame, font=("Segoe UI", 9), bd=1, relief=tk.SOLID)
+        self.mongo_uri_e.insert(0, settings.get("mongo_atlas_uri", DEFAULT_MONGO_URI))
+        self.mongo_uri_e.pack(fill=tk.X, pady=(2, 4), ipady=3)
+        self.setting_entries["mongo_atlas_uri"] = self.mongo_uri_e
+
+        tk.Label(
+            mongo_frame,
+            text="Format: mongodb+srv://<username>:<password>@cluster0.abcde.mongodb.net/?retryWrites=true&w=majority",
+            font=("Segoe UI", 8, "italic"),
+            bg="#ffffff",
+            fg="#64748b"
+        ).pack(anchor="w", pady=(0, 8))
+
+        # DB Name & Auto-sync row
+        db_box = tk.Frame(mongo_frame, bg="#ffffff")
+        db_box.pack(fill=tk.X, pady=(0, 8))
+
+        tk.Label(db_box, text="Database Name: ", font=("Segoe UI", 9, "bold"), bg="#ffffff").pack(side=tk.LEFT)
+        self.mongo_db_e = tk.Entry(db_box, font=("Segoe UI", 9), width=24, bd=1, relief=tk.SOLID)
+        self.mongo_db_e.insert(0, settings.get("mongo_db_name", DEFAULT_MONGO_DB))
+        self.mongo_db_e.pack(side=tk.LEFT, padx=(4, 16), ipady=2)
+        self.setting_entries["mongo_db_name"] = self.mongo_db_e
+
+        # Auto sync checkbox
+        self.mongo_auto_var = tk.IntVar(value=1 if settings.get("mongo_auto_sync", "1") == "1" else 0)
+        chk = tk.Checkbutton(
+            db_box,
+            text="Auto-sync new vouchers to MongoDB in background",
+            variable=self.mongo_auto_var,
+            font=("Segoe UI", 9),
+            bg="#ffffff",
+            activebackground="#ffffff"
+        )
+        chk.pack(side=tk.LEFT)
+
+        # Test Connection Button
+        tk.Button(
+            mongo_frame,
+            text="⚡ Test MongoDB Connection",
+            font=("Segoe UI", 9, "bold"),
+            bg="#e2e8f0",
+            fg="#0f172a",
+            relief=tk.FLAT,
+            padx=12,
+            pady=4,
+            command=self._test_mongo_connection
+        ).pack(anchor="w", pady=(4, 2))
+
         # Save Button
         save_btn = tk.Button(
             form_frame,
@@ -858,7 +952,7 @@ class AdminPanelWindow:
             val = entry.get().strip()
             database.set_setting(key, val)
             # Ensure directories exist
-            if key in ("storage_root_path", "backup_local_path", "voucher_pdf_dir", "reports_pdf_dir") and val:
+            if key in ("storage_root_path", "backup_local_path", "voucher_pdf_dir", "reports_pdf_dir", "voucher_json_dir") and val:
                 try:
                     os.makedirs(val, exist_ok=True)
                 except Exception as e:
@@ -867,47 +961,188 @@ class AdminPanelWindow:
         database.set_setting("printer_name", self.printer_cb.get())
         paper = "80mm" if "80mm" in self.paper_cb.get() else "A5"
         database.set_setting("paper_size", paper)
+        database.set_setting("mongo_auto_sync", str(self.mongo_auto_var.get()))
 
-        messagebox.showinfo("Settings Saved", "System settings and directory paths updated successfully!", parent=self.win)
+        messagebox.showinfo("Settings Saved", "System settings, MongoDB config, and directory paths updated successfully!", parent=self.win)
         if self.on_settings_updated:
             self.on_settings_updated()
 
     # ==========================================================================
-    # TAB 4: 3-LAYER BACKUP SUITE & TELEGRAM VAULT
+    # TAB 4: BACKUP SUITE, TEXT VAULT & MONGODB CLOUD SYNC
     # ==========================================================================
 
     def _build_backup_tab(self, parent):
-        f = tk.Frame(parent, bg="#f8fafc", padx=16, pady=16)
-        f.pack(fill=tk.BOTH, expand=True)
+        scroll_canvas = tk.Canvas(parent, bg="#f8fafc", highlightthickness=0)
+        scrollbar = ttk.Scrollbar(parent, orient=tk.VERTICAL, command=scroll_canvas.yview)
+        f = tk.Frame(scroll_canvas, bg="#f8fafc", padx=16, pady=16)
+
+        scroll_canvas.create_window((0, 0), window=f, anchor="nw")
+        scroll_canvas.configure(yscrollcommand=scrollbar.set)
+
+        scroll_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        f.bind("<Configure>", lambda e: scroll_canvas.configure(scrollregion=scroll_canvas.bbox("all")))
+
+        # ----------------------------------------------------------------------
+        # Section 1: Structured JSON Text Vault & MongoDB Atlas (User requested)
+        # ----------------------------------------------------------------------
+        json_card = tk.LabelFrame(
+            f,
+            text=" 📜 Structured JSON Text Vault & ☁️ MongoDB Atlas Cloud Sync ",
+            font=("Segoe UI", 10, "bold"),
+            bg="#ffffff",
+            fg="#0f766e",
+            padx=14,
+            pady=12,
+            bd=1,
+            relief=tk.SOLID
+        )
+        json_card.pack(fill=tk.X, pady=(0, 16))
 
         tk.Label(
+            json_card,
+            text=(
+                "All vouchers are replicated as structured JSON text documents for 100% lossless cold storage.\n"
+                "You can export full text backups, restore from JSON files/folders, and synchronize with MongoDB Atlas."
+            ),
+            font=("Segoe UI", 9),
+            bg="#ffffff",
+            fg="#475569",
+            justify=tk.LEFT
+        ).pack(anchor="w", pady=(0, 10))
+
+        # JSON Action Buttons Bar
+        json_btn_box = tk.Frame(json_card, bg="#ffffff")
+        json_btn_box.pack(fill=tk.X, pady=(0, 8))
+
+        tk.Button(
+            json_btn_box,
+            text="📤 Export Full Database to JSON",
+            font=("Segoe UI", 9, "bold"),
+            bg="#0d9488",
+            fg="#ffffff",
+            activebackground="#0f766e",
+            activeforeground="#ffffff",
+            relief=tk.FLAT,
+            padx=10,
+            pady=5,
+            command=self._export_full_database_json
+        ).pack(side=tk.LEFT, padx=(0, 6))
+
+        tk.Button(
+            json_btn_box,
+            text="📥 Restore from JSON File",
+            font=("Segoe UI", 9, "bold"),
+            bg="#2563eb",
+            fg="#ffffff",
+            activebackground="#1d4ed8",
+            activeforeground="#ffffff",
+            relief=tk.FLAT,
+            padx=10,
+            pady=5,
+            command=self._restore_from_json_file
+        ).pack(side=tk.LEFT, padx=6)
+
+        tk.Button(
+            json_btn_box,
+            text="📂 Bulk Restore from JSON Folder",
+            font=("Segoe UI", 9),
+            bg="#e2e8f0",
+            fg="#0f172a",
+            relief=tk.FLAT,
+            padx=10,
+            pady=5,
+            command=self._restore_from_json_folder
+        ).pack(side=tk.LEFT, padx=6)
+
+        tk.Button(
+            json_btn_box,
+            text="📂 Open JSON Folder",
+            font=("Segoe UI", 9),
+            bg="#f1f5f9",
+            fg="#334155",
+            relief=tk.FLAT,
+            padx=8,
+            pady=5,
+            command=lambda: self._open_directory(data_vault.get_voucher_json_directory())
+        ).pack(side=tk.LEFT, padx=6)
+
+        ttk.Separator(json_card, orient="horizontal").pack(fill=tk.X, pady=10)
+
+        # MongoDB Cloud Actions Bar
+        mongo_btn_box = tk.Frame(json_card, bg="#ffffff")
+        mongo_btn_box.pack(fill=tk.X, pady=(0, 4))
+
+        tk.Label(mongo_btn_box, text="MongoDB Atlas Operations:", font=("Segoe UI", 9, "bold"), bg="#ffffff").pack(side=tk.LEFT, padx=(0, 8))
+
+        tk.Button(
+            mongo_btn_box,
+            text="☁️ Push Local Vouchers to MongoDB",
+            font=("Segoe UI", 9, "bold"),
+            bg="#0f766e",
+            fg="#ffffff",
+            activebackground="#115e59",
+            activeforeground="#ffffff",
+            relief=tk.FLAT,
+            padx=10,
+            pady=4,
+            command=self._push_vouchers_to_mongo
+        ).pack(side=tk.LEFT, padx=4)
+
+        tk.Button(
+            mongo_btn_box,
+            text="📥 Pull & Restore from MongoDB Atlas",
+            font=("Segoe UI", 9, "bold"),
+            bg="#3b82f6",
+            fg="#ffffff",
+            activebackground="#2563eb",
+            activeforeground="#ffffff",
+            relief=tk.FLAT,
+            padx=10,
+            pady=4,
+            command=self._pull_vouchers_from_mongo
+        ).pack(side=tk.LEFT, padx=4)
+
+        self.mongo_sync_lbl = tk.Label(
+            json_card,
+            text=f"Last Cloud Sync: {database.get_setting('last_mongo_sync_timestamp', 'Never')}",
+            font=("Segoe UI", 8, "italic"),
+            bg="#ffffff",
+            fg="#64748b"
+        )
+        self.mongo_sync_lbl.pack(anchor="w", pady=(6, 0))
+
+        # ----------------------------------------------------------------------
+        # Section 2: Automated 3-Layer Disaster Recovery (ZIP, USB, Telegram)
+        # ----------------------------------------------------------------------
+        tk.Label(
             f,
-            text="🛡️ Automated 3-Layer Disaster Recovery",
-            font=("Segoe UI", 12, "bold"),
+            text="🛡️ Automated 3-Layer Disaster Recovery (Compressed ZIP Archives)",
+            font=("Segoe UI", 11, "bold"),
             bg="#f8fafc",
             fg="#0f766e"
-        ).pack(anchor="w", pady=(0, 8))
+        ).pack(anchor="w", pady=(8, 4))
 
         desc = (
-            "• Layer 1: Atomic SQLite snapshot compressed into D:\\Hospital_Backup\\ on exit.\n"
+            "• Layer 1: Atomic SQLite snapshot compressed into D:\\Hospital_POS_Data\\Backups\\ on exit.\n"
             "• Layer 2: Auto-detects connected USB Flash Drive and mirrors backup archive.\n"
             "• Layer 3: Telegram Cloud Vault sends encrypted database directly to your Telegram chat."
         )
-        tk.Label(f, text=desc, font=("Segoe UI", 9), bg="#f8fafc", fg="#475569", justify=tk.LEFT).pack(anchor="w", pady=(0, 14))
+        tk.Label(f, text=desc, font=("Segoe UI", 9), bg="#f8fafc", fg="#475569", justify=tk.LEFT).pack(anchor="w", pady=(0, 10))
 
         # Telegram Configuration Card
         tg_card = tk.LabelFrame(f, text=" Telegram Cloud Vault Configuration ", font=("Segoe UI", 9, "bold"), bg="#ffffff", padx=12, pady=10)
-        tg_card.pack(fill=tk.X, pady=(0, 14))
+        tg_card.pack(fill=tk.X, pady=(0, 10))
 
         tk.Label(tg_card, text="Telegram Bot Token:", bg="#ffffff", font=("Segoe UI", 9)).pack(anchor="w")
         self.tg_token_e = tk.Entry(tg_card, font=("Segoe UI", 10), bd=1, relief=tk.SOLID)
         self.tg_token_e.insert(0, database.get_setting("telegram_bot_token", ""))
-        self.tg_token_e.pack(fill=tk.X, pady=(2, 8), ipady=2)
+        self.tg_token_e.pack(fill=tk.X, pady=(2, 6), ipady=2)
 
         tk.Label(tg_card, text="Telegram Chat ID:", bg="#ffffff", font=("Segoe UI", 9)).pack(anchor="w")
         self.tg_chat_e = tk.Entry(tg_card, font=("Segoe UI", 10), bd=1, relief=tk.SOLID)
         self.tg_chat_e.insert(0, database.get_setting("telegram_chat_id", ""))
-        self.tg_chat_e.pack(fill=tk.X, pady=(2, 8), ipady=2)
+        self.tg_chat_e.pack(fill=tk.X, pady=(2, 6), ipady=2)
 
         save_tg_btn = tk.Button(
             tg_card,
@@ -944,12 +1179,158 @@ class AdminPanelWindow:
             bg="#f8fafc",
             fg="#64748b"
         )
-        self.backup_status_lbl.pack(anchor="w", pady=(12, 0))
+        self.backup_status_lbl.pack(anchor="w", pady=(8, 0))
+
+    def _test_mongo_connection(self):
+        uri = self.setting_entries["mongo_atlas_uri"].get().strip() if "mongo_atlas_uri" in self.setting_entries else database.get_setting("mongo_atlas_uri", "")
+        if not uri:
+            messagebox.showwarning("Missing URI", "Please enter your MongoDB Atlas connection string (mongodb+srv://...) first.", parent=self.win)
+            return
+
+        res = data_vault.test_mongo_connection(uri=uri)
+        if res["success"]:
+            messagebox.showinfo("MongoDB Connected", f"✅ {res['message']}", parent=self.win)
+        else:
+            messagebox.showerror("MongoDB Error", f"❌ {res['message']}", parent=self.win)
+
+    def _export_full_database_json(self):
+        try:
+            out_file = data_vault.export_full_database_to_json()
+            if messagebox.askyesno(
+                "Export Complete",
+                f"Full SQLite database successfully exported as structured JSON text!\n\n"
+                f"Saved at:\n{out_file}\n\n"
+                f"Do you want to open the JSON folder now?",
+                parent=self.win
+            ):
+                self._open_directory(os.path.dirname(out_file))
+        except Exception as e:
+            messagebox.showerror("Export Failed", f"Failed to export database to JSON:\n{e}", parent=self.win)
+
+    def _restore_from_json_file(self):
+        init_dir = data_vault.get_voucher_json_directory()
+        chosen = filedialog.askopenfilename(
+            parent=self.win,
+            title="Select JSON Backup or Voucher File to Restore",
+            initialdir=init_dir,
+            filetypes=[("JSON Files", "*.json"), ("All Files", "*.*")]
+        )
+        if not chosen:
+            return
+
+        overwrite = messagebox.askyesno(
+            "Restore Overwrite Mode",
+            "Do you want to OVERWRITE existing vouchers if duplicate voucher numbers are found?\n\n"
+            "• Click YES to replace/update existing records.\n"
+            "• Click NO to safely skip existing records.",
+            parent=self.win
+        )
+
+        try:
+            res = data_vault.restore_from_json_file(chosen, overwrite_existing=overwrite)
+            if res.get("type") == "full_dump":
+                msg = (
+                    f"Full Database Backup Restored!\n\n"
+                    f"• Vouchers Added: {res['restored_vouchers']}\n"
+                    f"• Vouchers Skipped: {res['skipped_vouchers']}\n"
+                    f"• Diagnostic Tests Restored: {res['restored_tests']}\n"
+                    f"• Total Records in File: {res['total_records']}"
+                )
+            else:
+                status = "Restored / Updated" if res.get("restored") else "Skipped (already exists)"
+                msg = f"Voucher {res.get('voucher_no')} {status} successfully!"
+
+            messagebox.showinfo("Restore Finished", msg, parent=self.win)
+            self._refresh_tests_tree()
+            self._load_daily_report()
+            if self.on_settings_updated:
+                self.on_settings_updated()
+        except Exception as e:
+            messagebox.showerror("Restore Error", f"Failed to restore from JSON file:\n{e}", parent=self.win)
+
+    def _restore_from_json_folder(self):
+        init_dir = data_vault.get_voucher_json_directory()
+        chosen_dir = filedialog.askdirectory(
+            parent=self.win,
+            title="Select Folder Containing JSON Vouchers to Restore",
+            initialdir=init_dir
+        )
+        if not chosen_dir:
+            return
+
+        overwrite = messagebox.askyesno(
+            "Bulk Restore Overwrite Mode",
+            "Do you want to OVERWRITE existing vouchers if duplicate voucher numbers are found in this folder?\n\n"
+            "• Click YES to overwrite.\n"
+            "• Click NO to safely skip duplicates.",
+            parent=self.win
+        )
+
+        try:
+            res = data_vault.restore_from_json_folder(chosen_dir, overwrite_existing=overwrite)
+            msg = (
+                f"Bulk JSON Folder Restore Complete!\n\n"
+                f"• Total Files Scanned: {res['total_files']}\n"
+                f"• Successfully Restored: {res['restored']}\n"
+                f"• Skipped (Already Existing): {res['skipped']}\n"
+                f"• Format Errors / Ignored: {res['errors']}"
+            )
+            messagebox.showinfo("Bulk Restore Finished", msg, parent=self.win)
+            self._load_daily_report()
+            if self.on_settings_updated:
+                self.on_settings_updated()
+        except Exception as e:
+            messagebox.showerror("Bulk Restore Error", f"Failed to restore from JSON directory:\n{e}", parent=self.win)
+
+    def _push_vouchers_to_mongo(self):
+        uri = database.get_setting("mongo_atlas_uri", "").strip()
+        if not uri:
+            messagebox.showwarning(
+                "MongoDB Atlas Not Configured",
+                "Please configure your MongoDB Atlas Connection URI in System Settings first.",
+                parent=self.win
+            )
+            return
+
+        res = data_vault.push_to_mongodb()
+        if res["success"]:
+            messagebox.showinfo("MongoDB Cloud Sync", f"✅ {res['message']}", parent=self.win)
+            self.mongo_sync_lbl.configure(text=f"Last Cloud Sync: {database.get_setting('last_mongo_sync_timestamp', 'Just Now')}")
+        else:
+            messagebox.showerror("MongoDB Sync Error", f"❌ {res['message']}", parent=self.win)
+
+    def _pull_vouchers_from_mongo(self):
+        uri = database.get_setting("mongo_atlas_uri", "").strip()
+        if not uri:
+            messagebox.showwarning(
+                "MongoDB Atlas Not Configured",
+                "Please configure your MongoDB Atlas Connection URI in System Settings first.",
+                parent=self.win
+            )
+            return
+
+        overwrite = messagebox.askyesno(
+            "Cloud Restore Overwrite",
+            "Do you want to OVERWRITE local vouchers if duplicate numbers are found in MongoDB Atlas?\n\n"
+            "• Click YES to update local records from cloud.\n"
+            "• Click NO to keep local copies and only import missing vouchers.",
+            parent=self.win
+        )
+
+        res = data_vault.pull_and_restore_from_mongodb(overwrite_existing=overwrite)
+        if res["success"]:
+            messagebox.showinfo("MongoDB Cloud Restore", f"✅ {res['message']}", parent=self.win)
+            self._load_daily_report()
+            self.mongo_sync_lbl.configure(text=f"Last Cloud Sync: {database.get_setting('last_mongo_sync_timestamp', 'Just Now')}")
+            if self.on_settings_updated:
+                self.on_settings_updated()
+        else:
+            messagebox.showerror("MongoDB Cloud Restore Error", f"❌ {res['message']}", parent=self.win)
 
     def _save_telegram_settings(self):
         database.set_setting("telegram_bot_token", self.tg_token_e.get().strip())
         database.set_setting("telegram_chat_id", self.tg_chat_e.get().strip())
-        messagebox.showinfo("Saved", "Telegram bot settings stored.")
+        messagebox.showinfo("Saved", "Telegram bot settings stored.", parent=self.win)
 
     def _run_manual_backup(self):
         self.backup_status_lbl.configure(text="Executing backup suite... Please wait.")
@@ -962,7 +1343,7 @@ class AdminPanelWindow:
 
         summary_msg = f"{l1}\n{l2}\n{l3}"
         self.backup_status_lbl.configure(text=f"Last Backup: {res['timestamp']}")
-        messagebox.showinfo("Backup Finished", summary_msg)
+        messagebox.showinfo("Backup Finished", summary_msg, parent=self.win)
 
     # ==========================================================================
     # TAB 5: HARDWARE ID & LICENSE DETAILS
