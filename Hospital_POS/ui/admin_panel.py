@@ -10,8 +10,9 @@ Modules included:
 5. 3-Layer Backup Trigger & Hardware License Details
 """
 
+import os
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, filedialog
 from datetime import datetime
 from typing import Optional, Callable
 
@@ -19,7 +20,14 @@ import database
 import printer_engine
 import backup_manager
 import hwid_license
-from config import APP_NAME
+import pdf_generator
+from config import (
+    APP_NAME,
+    DEFAULT_STORAGE_ROOT,
+    DEFAULT_BACKUP_DIR,
+    DEFAULT_VOUCHER_PDF_DIR,
+    DEFAULT_REPORTS_PDF_DIR
+)
 
 
 class AdminPanelWindow:
@@ -410,6 +418,30 @@ class AdminPanelWindow:
             command=self._load_daily_report
         ).pack(side=tk.LEFT)
 
+        tk.Button(
+            ctrl_frame,
+            text="📄 Export Daily Audit PDF",
+            font=("Segoe UI", 9, "bold"),
+            bg="#0f766e",
+            fg="#ffffff",
+            activebackground="#115e59",
+            activeforeground="#ffffff",
+            relief=tk.FLAT,
+            padx=12,
+            command=self._export_daily_audit_pdf
+        ).pack(side=tk.LEFT, padx=8)
+
+        tk.Button(
+            ctrl_frame,
+            text="📂 Open Reports Folder",
+            font=("Segoe UI", 9),
+            bg="#e2e8f0",
+            fg="#1e293b",
+            relief=tk.FLAT,
+            padx=10,
+            command=lambda: self._open_directory(pdf_generator.get_reports_pdf_directory())
+        ).pack(side=tk.LEFT)
+
         # Summary Metrics Cards
         metrics_frame = tk.Frame(parent, bg="#f8fafc", padx=8, pady=6)
         metrics_frame.pack(fill=tk.X)
@@ -510,8 +542,154 @@ class AdminPanelWindow:
                 r["payment_status"]
             ))
 
+    def _export_daily_audit_pdf(self):
+        date_str = self.report_date_e.get().strip() or datetime.now().strftime("%Y-%m-%d")
+        try:
+            pdf_path = pdf_generator.generate_daily_audit_pdf(date_str)
+            if pdf_path and os.path.exists(pdf_path):
+                if messagebox.askyesno(
+                    "PDF Generated Successfully",
+                    f"Daily Audit PDF report generated successfully!\n\n"
+                    f"Saved at:\n{pdf_path}\n\n"
+                    f"Do you want to open and view the PDF report now?",
+                    parent=self.win
+                ):
+                    try:
+                        os.startfile(pdf_path)
+                    except Exception as e:
+                        messagebox.showwarning("Open File", f"PDF was created but could not be launched directly:\n{e}", parent=self.win)
+            else:
+                messagebox.showerror("Export Failed", "PDF generator could not produce the report file.", parent=self.win)
+        except Exception as e:
+            messagebox.showerror("Export Error", f"Failed to generate Daily Audit PDF:\n{e}", parent=self.win)
+
+    def _open_directory(self, path: str):
+        if not path:
+            messagebox.showwarning("Directory Empty", "No directory path specified.", parent=self.win)
+            return
+        try:
+            if not os.path.exists(path):
+                os.makedirs(path, exist_ok=True)
+            os.startfile(path)
+        except Exception as e:
+            messagebox.showerror("Error Opening Folder", f"Could not open directory in Windows Explorer:\n{path}\n\nError: {e}", parent=self.win)
+
+    def _browse_directory(self, target_entry: tk.Entry, title: str):
+        current_val = target_entry.get().strip()
+        initial_dir = current_val if os.path.exists(current_val) else DEFAULT_STORAGE_ROOT
+        if not os.path.exists(initial_dir):
+            initial_dir = os.path.expanduser("~")
+
+        chosen = filedialog.askdirectory(parent=self.win, title=title, initialdir=initial_dir)
+        if chosen:
+            normalized = os.path.normpath(chosen)
+            target_entry.delete(0, tk.END)
+            target_entry.insert(0, normalized)
+
+    def _auto_setup_subfolders(self):
+        root_dir = self.setting_entries["storage_root_path"].get().strip()
+        if not root_dir:
+            root_dir = DEFAULT_STORAGE_ROOT
+            self.setting_entries["storage_root_path"].delete(0, tk.END)
+            self.setting_entries["storage_root_path"].insert(0, root_dir)
+
+        backup_dir = os.path.join(root_dir, "Backups")
+        voucher_dir = os.path.join(root_dir, "Vouchers_PDF")
+        reports_dir = os.path.join(root_dir, "Daily_Reports")
+
+        try:
+            for d in (root_dir, backup_dir, voucher_dir, reports_dir):
+                os.makedirs(d, exist_ok=True)
+
+            self.setting_entries["backup_local_path"].delete(0, tk.END)
+            self.setting_entries["backup_local_path"].insert(0, backup_dir)
+
+            self.setting_entries["voucher_pdf_dir"].delete(0, tk.END)
+            self.setting_entries["voucher_pdf_dir"].insert(0, voucher_dir)
+
+            self.setting_entries["reports_pdf_dir"].delete(0, tk.END)
+            self.setting_entries["reports_pdf_dir"].insert(0, reports_dir)
+
+            messagebox.showinfo(
+                "Subfolders Initialized",
+                f"All 3 dedicated storage folders have been configured and verified on disk:\n\n"
+                f"📁 Root: {root_dir}\n"
+                f"├─ 🛡️ Backups: {backup_dir}\n"
+                f"├─ 📄 Voucher PDFs: {voucher_dir}\n"
+                f"└─ 📊 Daily Reports: {reports_dir}\n\n"
+                f"Click 'Save Application Settings' to apply these paths permanently.",
+                parent=self.win
+            )
+        except Exception as e:
+            messagebox.showerror("Folder Setup Error", f"Could not create storage folders:\n{e}", parent=self.win)
+
+    def _add_directory_row(self, parent_frame: tk.Widget, key: str, label_text: str, description: str, default_val: str, is_root: bool = False):
+        row_frame = tk.Frame(parent_frame, bg="#ffffff")
+        row_frame.pack(fill=tk.X, pady=(4, 8))
+
+        top_line = tk.Frame(row_frame, bg="#ffffff")
+        top_line.pack(fill=tk.X)
+
+        tk.Label(
+            top_line,
+            text=label_text,
+            font=("Segoe UI", 9, "bold"),
+            bg="#ffffff",
+            fg="#1e293b"
+        ).pack(side=tk.LEFT)
+
+        tk.Label(
+            top_line,
+            text=f"  ({description})",
+            font=("Segoe UI", 8),
+            bg="#ffffff",
+            fg="#64748b"
+        ).pack(side=tk.LEFT)
+
+        input_box = tk.Frame(row_frame, bg="#ffffff")
+        input_box.pack(fill=tk.X, pady=(2, 0))
+
+        entry = tk.Entry(input_box, font=("Segoe UI", 9), bd=1, relief=tk.SOLID)
+        entry.insert(0, default_val)
+        entry.pack(side=tk.LEFT, fill=tk.X, expand=True, ipady=3)
+        self.setting_entries[key] = entry
+
+        tk.Button(
+            input_box,
+            text="📁 Browse...",
+            font=("Segoe UI", 8, "bold"),
+            bg="#e2e8f0",
+            fg="#0f172a",
+            relief=tk.FLAT,
+            padx=8,
+            command=lambda e=entry, k=key: self._browse_directory(e, f"Select {label_text}")
+        ).pack(side=tk.LEFT, padx=(6, 4))
+
+        if is_root:
+            tk.Button(
+                input_box,
+                text="✨ Auto-Setup Subfolders",
+                font=("Segoe UI", 8, "bold"),
+                bg="#0d9488",
+                fg="#ffffff",
+                relief=tk.FLAT,
+                padx=8,
+                command=self._auto_setup_subfolders
+            ).pack(side=tk.LEFT, padx=4)
+
+        tk.Button(
+            input_box,
+            text="📂 Open Folder",
+            font=("Segoe UI", 8),
+            bg="#f1f5f9",
+            fg="#334155",
+            relief=tk.FLAT,
+            padx=8,
+            command=lambda e=entry: self._open_directory(e.get().strip())
+        ).pack(side=tk.LEFT, padx=4)
+
     # ==========================================================================
-    # TAB 3: SYSTEM CONFIGURATION & PRINTER SELECTION
+    # TAB 3: SYSTEM CONFIGURATION, STORAGE DIRECTORIES & PRINTER SELECTION
     # ==========================================================================
 
     def _build_settings_tab(self, parent):
@@ -531,6 +709,89 @@ class AdminPanelWindow:
         # Fields Dictionary
         self.setting_entries = {}
 
+        # ----------------------------------------------------------------------
+        # Card 1: Storage & Archival Directories (PDFs, Backups, Reports)
+        # ----------------------------------------------------------------------
+        storage_frame = tk.LabelFrame(
+            form_frame,
+            text=" 📂 Storage & Archival Directories (PDFs & Backups) ",
+            font=("Segoe UI", 10, "bold"),
+            bg="#ffffff",
+            fg="#0f766e",
+            padx=14,
+            pady=12,
+            bd=1,
+            relief=tk.SOLID
+        )
+        storage_frame.pack(fill=tk.X, pady=(0, 14))
+
+        tk.Label(
+            storage_frame,
+            text="Configure dedicated paths for automated backups, archived voucher PDFs, and daily financial audit reports:",
+            font=("Segoe UI", 9),
+            bg="#ffffff",
+            fg="#475569"
+        ).pack(anchor="w", pady=(0, 10))
+
+        # Root Storage Directory
+        root_val = settings.get("storage_root_path", DEFAULT_STORAGE_ROOT)
+        self._add_directory_row(
+            parent_frame=storage_frame,
+            key="storage_root_path",
+            label_text="Main Storage Root Folder:",
+            description="Base folder under which POS data and subfolders reside.",
+            default_val=root_val,
+            is_root=True
+        )
+
+        ttk.Separator(storage_frame, orient="horizontal").pack(fill=tk.X, pady=8)
+
+        # 1. Automated Backups Subfolder
+        backup_val = settings.get("backup_local_path", DEFAULT_BACKUP_DIR)
+        self._add_directory_row(
+            parent_frame=storage_frame,
+            key="backup_local_path",
+            label_text="1. Automated Backups Folder (Layer 1):",
+            description="Stores atomic SQLite compressed ZIP backups on app close and manual triggers.",
+            default_val=backup_val
+        )
+
+        # 2. Printed Voucher PDFs Subfolder
+        voucher_pdf_val = settings.get("voucher_pdf_dir", DEFAULT_VOUCHER_PDF_DIR)
+        self._add_directory_row(
+            parent_frame=storage_frame,
+            key="voucher_pdf_dir",
+            label_text="2. Printed Voucher PDFs Archive Folder:",
+            description="Every printed voucher automatically saves a printable PDF copy here.",
+            default_val=voucher_pdf_val
+        )
+
+        # 3. Daily Reports Subfolder
+        reports_pdf_val = settings.get("reports_pdf_dir", DEFAULT_REPORTS_PDF_DIR)
+        self._add_directory_row(
+            parent_frame=storage_frame,
+            key="reports_pdf_dir",
+            label_text="3. Daily Calculations & Audit Reports Folder:",
+            description="Daily conduct summaries, revenue calculations, and audit PDF exports are saved here.",
+            default_val=reports_pdf_val
+        )
+
+        # ----------------------------------------------------------------------
+        # Card 2: Hospital Identity & Branding
+        # ----------------------------------------------------------------------
+        hosp_frame = tk.LabelFrame(
+            form_frame,
+            text=" 🏥 Hospital Identity & Receipt Branding ",
+            font=("Segoe UI", 10, "bold"),
+            bg="#ffffff",
+            fg="#0f766e",
+            padx=14,
+            pady=12,
+            bd=1,
+            relief=tk.SOLID
+        )
+        hosp_frame.pack(fill=tk.X, pady=(0, 14))
+
         fields = [
             ("hospital_name", "Hospital / Diagnostic Center Name:", settings.get("hospital_name", "")),
             ("hospital_tagline", "Tagline / Specialty Line:", settings.get("hospital_tagline", "")),
@@ -538,53 +799,76 @@ class AdminPanelWindow:
             ("hospital_phone", "Contact Phone:", settings.get("hospital_phone", "")),
             ("voucher_footer", "Receipt Footer Notice:", settings.get("voucher_footer", "")),
             ("currency_symbol", "Currency Symbol (e.g. Tk, $, ৳):", settings.get("currency_symbol", "Tk")),
-            ("backup_local_path", r"Local Backup Directory (Layer 1):", settings.get("backup_local_path", r"D:\Hospital_Backup")),
             ("admin_pin", "Admin Security PIN:", settings.get("admin_pin", "1234")),
         ]
 
         for key, label, val in fields:
-            tk.Label(form_frame, text=label, font=("Segoe UI", 9, "bold"), bg="#f8fafc").pack(anchor="w", pady=(6, 1))
-            entry = tk.Entry(form_frame, font=("Segoe UI", 10), width=50, bd=1, relief=tk.SOLID)
+            tk.Label(hosp_frame, text=label, font=("Segoe UI", 9, "bold"), bg="#ffffff").pack(anchor="w", pady=(4, 1))
+            entry = tk.Entry(hosp_frame, font=("Segoe UI", 10), width=50, bd=1, relief=tk.SOLID)
             entry.insert(0, val)
             entry.pack(fill=tk.X, pady=(0, 4), ipady=2)
             self.setting_entries[key] = entry
 
-        # Printer Configuration Dropdown
-        tk.Label(form_frame, text="Silent Print Target Printer:", font=("Segoe UI", 9, "bold"), bg="#f8fafc").pack(anchor="w", pady=(8, 1))
+        # ----------------------------------------------------------------------
+        # Card 3: Printer & Paper Format
+        # ----------------------------------------------------------------------
+        printer_frame = tk.LabelFrame(
+            form_frame,
+            text=" 🖨️ Printer & Paper Configuration ",
+            font=("Segoe UI", 10, "bold"),
+            bg="#ffffff",
+            fg="#0f766e",
+            padx=14,
+            pady=12,
+            bd=1,
+            relief=tk.SOLID
+        )
+        printer_frame.pack(fill=tk.X, pady=(0, 14))
+
+        tk.Label(printer_frame, text="Silent Print Target Printer:", font=("Segoe UI", 9, "bold"), bg="#ffffff").pack(anchor="w", pady=(4, 1))
         available_printers = ["DEFAULT"] + printer_engine.get_available_printers()
-        self.printer_cb = ttk.Combobox(form_frame, values=available_printers, state="readonly")
+        self.printer_cb = ttk.Combobox(printer_frame, values=available_printers, state="readonly")
         current_p = settings.get("printer_name", "DEFAULT")
         self.printer_cb.set(current_p if current_p in available_printers else "DEFAULT")
         self.printer_cb.pack(fill=tk.X, pady=(0, 8))
 
         # Paper Size (80mm Thermal vs A5)
-        tk.Label(form_frame, text="Voucher Paper Format:", font=("Segoe UI", 9, "bold"), bg="#f8fafc").pack(anchor="w", pady=(4, 1))
-        self.paper_cb = ttk.Combobox(form_frame, values=["80mm (Thermal POS)", "A5 (Laser / Slip)"], state="readonly")
+        tk.Label(printer_frame, text="Voucher Paper Format:", font=("Segoe UI", 9, "bold"), bg="#ffffff").pack(anchor="w", pady=(4, 1))
+        self.paper_cb = ttk.Combobox(printer_frame, values=["80mm (Thermal POS)", "A5 (Laser / Slip)"], state="readonly")
         self.paper_cb.set("80mm (Thermal POS)" if settings.get("paper_size", "80mm") == "80mm" else "A5 (Laser / Slip)")
-        self.paper_cb.pack(fill=tk.X, pady=(0, 16))
+        self.paper_cb.pack(fill=tk.X, pady=(0, 8))
 
         # Save Button
         save_btn = tk.Button(
             form_frame,
-            text="💾 Save Application Settings",
+            text="💾 Save Application Settings & Verify Folders",
             font=("Segoe UI", 11, "bold"),
             bg="#0d9488",
             fg="#ffffff",
+            activebackground="#0f766e",
+            activeforeground="#ffffff",
             relief=tk.FLAT,
-            pady=8,
+            pady=10,
             command=self._save_settings
         )
         save_btn.pack(fill=tk.X, pady=(10, 20))
 
     def _save_settings(self):
         for key, entry in self.setting_entries.items():
-            database.set_setting(key, entry.get().strip())
+            val = entry.get().strip()
+            database.set_setting(key, val)
+            # Ensure directories exist
+            if key in ("storage_root_path", "backup_local_path", "voucher_pdf_dir", "reports_pdf_dir") and val:
+                try:
+                    os.makedirs(val, exist_ok=True)
+                except Exception as e:
+                    print(f"[AdminPanel] Warning: Could not create folder '{val}': {e}")
 
         database.set_setting("printer_name", self.printer_cb.get())
         paper = "80mm" if "80mm" in self.paper_cb.get() else "A5"
         database.set_setting("paper_size", paper)
 
-        messagebox.showinfo("Settings Saved", "System settings and printer configuration updated successfully!")
+        messagebox.showinfo("Settings Saved", "System settings and directory paths updated successfully!", parent=self.win)
         if self.on_settings_updated:
             self.on_settings_updated()
 

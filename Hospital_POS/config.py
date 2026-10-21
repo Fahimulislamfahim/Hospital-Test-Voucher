@@ -29,8 +29,12 @@ APPDATA_DIR = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "
 LICENSE_FILE_NAME = "license.lic"
 LICENSE_FILE_PATH = os.path.join(APPDATA_DIR, LICENSE_FILE_NAME)
 
-# Backup configuration
-LOCAL_BACKUP_DIR = r"D:\Hospital_Backup"
+# Storage Root & Sub-Directory Configuration
+DEFAULT_STORAGE_ROOT = r"D:\Hospital_POS_Data" if os.path.exists("D:\\") else os.path.join(os.path.expanduser("~"), "Hospital_POS_Data")
+LOCAL_BACKUP_DIR = os.path.join(DEFAULT_STORAGE_ROOT, "Backups")
+DEFAULT_BACKUP_DIR = LOCAL_BACKUP_DIR
+DEFAULT_VOUCHER_PDF_DIR = os.path.join(DEFAULT_STORAGE_ROOT, "Vouchers_PDF")
+DEFAULT_REPORTS_PDF_DIR = os.path.join(DEFAULT_STORAGE_ROOT, "Daily_Reports")
 USB_BACKUP_FOLDER_NAME = "Hospital_POS_Backup"
 
 # Cloud Backup (Telegram Bot) - Can be overridden in database settings table

@@ -26,6 +26,7 @@ from typing import List, Dict, Any, Optional
 import database
 import printer_engine
 import backup_manager
+import pdf_generator
 from config import APP_NAME, APP_VERSION
 
 
@@ -512,6 +513,34 @@ class BillingDashboard:
         self.recent_tree.pack(fill=tk.BOTH, expand=True)
         self.recent_tree.bind("<Double-Button-1>", lambda e: self._on_double_click_recent())
 
+        # Action Toolbar below recent tree
+        rec_actions = tk.Frame(card, bg=self.c_card)
+        rec_actions.pack(fill=tk.X, pady=(6, 2))
+
+        tk.Button(
+            rec_actions,
+            text="📄 View PDF",
+            font=("Segoe UI", 8, "bold"),
+            bg="#f1f5f9",
+            fg="#0f766e",
+            activebackground="#e2e8f0",
+            relief=tk.FLAT,
+            padx=8,
+            command=self._view_selected_voucher_pdf
+        ).pack(side=tk.LEFT, padx=(0, 4))
+
+        tk.Button(
+            rec_actions,
+            text="📂 PDF Folder",
+            font=("Segoe UI", 8),
+            bg="#f1f5f9",
+            fg="#334155",
+            activebackground="#e2e8f0",
+            relief=tk.FLAT,
+            padx=8,
+            command=self._open_vouchers_pdf_folder
+        ).pack(side=tk.LEFT)
+
     def _build_shortcut_bar(self):
         bar = tk.Frame(self.root, bg="#1e293b", height=32, padx=12)
         bar.pack(fill=tk.X, side=tk.BOTTOM)
@@ -812,14 +841,22 @@ class BillingDashboard:
             )
             self.last_created_voucher = voucher
 
-            # 2. Trigger Silent Print (No Dialogs!)
+            # 2. Automatically generate and archive PDF copy
+            pdf_path = None
+            try:
+                pdf_path = pdf_generator.generate_voucher_pdf(voucher)
+            except Exception as pdf_err:
+                print(f"[Dashboard] Warning: PDF archiving failed: {pdf_err}")
+
+            # 3. Trigger Silent Print (No Dialogs!)
             print_res = printer_engine.print_voucher_silently(voucher)
             
             # Show toast / footer update
             v_no = voucher["voucher_no"]
-            self.footer_status.configure(text=f"✅ Saved & Printed: {v_no} ({print_res['message']})")
+            pdf_msg = " + PDF Archived" if pdf_path else ""
+            self.footer_status.configure(text=f"✅ Saved & Printed: {v_no}{pdf_msg} ({print_res['message']})")
 
-            # 3. Refresh Recent List & Reset for Next Patient
+            # 4. Refresh Recent List & Reset for Next Patient
             self.refresh_recent_vouchers()
             self.reset_form()
 
@@ -886,6 +923,36 @@ class BillingDashboard:
         if v:
             res = printer_engine.print_voucher_silently(v)
             messagebox.showinfo("Reprint Sent", f"Reprinting voucher {v_no}:\n{res['message']}")
+
+    def _view_selected_voucher_pdf(self):
+        selected = self.recent_tree.selection()
+        if not selected:
+            messagebox.showinfo("Select Voucher", "Please select a voucher from the list first.")
+            return
+        item_vals = self.recent_tree.item(selected[0])["values"]
+        v_no = item_vals[0]
+        v = database.get_voucher_by_no(v_no)
+        if not v:
+            messagebox.showerror("Error", f"Voucher {v_no} not found.")
+            return
+
+        pdf_path = pdf_generator.generate_voucher_pdf(v)
+        if pdf_path and os.path.exists(pdf_path):
+            try:
+                os.startfile(pdf_path)
+            except Exception as e:
+                messagebox.showerror("Error", f"Could not launch PDF viewer:\n{e}")
+        else:
+            messagebox.showerror("Error", f"Could not generate PDF for voucher {v_no}.")
+
+    def _open_vouchers_pdf_folder(self):
+        pdf_dir = pdf_generator.get_voucher_pdf_directory()
+        try:
+            if not os.path.exists(pdf_dir):
+                os.makedirs(pdf_dir, exist_ok=True)
+            os.startfile(pdf_dir)
+        except Exception as e:
+            messagebox.showerror("Error", f"Could not open Vouchers PDF folder:\n{e}")
 
     def _trigger_backup(self):
         self.footer_status.configure(text="⏳ Executing 3-layer backup...")
