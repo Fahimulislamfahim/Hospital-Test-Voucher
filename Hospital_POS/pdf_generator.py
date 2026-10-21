@@ -110,41 +110,174 @@ def generate_voucher_pdf(voucher: Dict[str, Any], output_dir: Optional[str] = No
 
     styles = getSampleStyleSheet()
 
-    # Custom typography styles
-    style_h_name = ParagraphStyle("HName", parent=styles["Normal"], fontName="Helvetica-Bold", fontSize=14, leading=16, alignment=1, textColor=colors.HexColor("#0f766e"))
-    style_h_sub = ParagraphStyle("HSub", parent=styles["Normal"], fontName="Helvetica", fontSize=8, leading=10, alignment=1, textColor=colors.HexColor("#475569"))
-    style_doc_title = ParagraphStyle("DocTitle", parent=styles["Normal"], fontName="Helvetica-Bold", fontSize=9, leading=11, alignment=1, textColor=colors.HexColor("#0f172a"))
-    style_label = ParagraphStyle("Lbl", parent=styles["Normal"], fontName="Helvetica-Bold", fontSize=8, leading=10, textColor=colors.HexColor("#1e293b"))
-    style_val = ParagraphStyle("Val", parent=styles["Normal"], fontName="Helvetica", fontSize=8, leading=10, textColor=colors.HexColor("#0f172a"))
-    style_th = ParagraphStyle("TH", parent=styles["Normal"], fontName="Helvetica-Bold", fontSize=8, leading=10, textColor=colors.HexColor("#ffffff"), alignment=1)
-    style_td = ParagraphStyle("TD", parent=styles["Normal"], fontName="Helvetica", fontSize=8, leading=10, textColor=colors.HexColor("#1e293b"))
-    style_td_r = ParagraphStyle("TDR", parent=styles["Normal"], fontName="Helvetica", fontSize=8, leading=10, alignment=2, textColor=colors.HexColor("#1e293b"))
-    style_barcode = ParagraphStyle("Barcode", parent=styles["Normal"], fontName="Courier-Bold", fontSize=11, leading=13, alignment=1, textColor=colors.HexColor("#0f766e"))
-    style_footer = ParagraphStyle("Foot", parent=styles["Normal"], fontName="Helvetica-Oblique", fontSize=7, leading=9, alignment=1, textColor=colors.HexColor("#64748b"))
+    # Strictly Monochrome Typography Styles (Pure Black & White)
+    style_h_name = ParagraphStyle(
+        "HName",
+        parent=styles["Normal"],
+        fontName="Helvetica-Bold",
+        fontSize=15,
+        leading=18,
+        alignment=1,
+        textColor=colors.black
+    )
+    style_h_sub = ParagraphStyle(
+        "HSub",
+        parent=styles["Normal"],
+        fontName="Helvetica",
+        fontSize=8.5,
+        leading=11,
+        alignment=1,
+        textColor=colors.black
+    )
+    style_doc_title = ParagraphStyle(
+        "DocTitle",
+        parent=styles["Normal"],
+        fontName="Helvetica-Bold",
+        fontSize=9.5,
+        leading=12,
+        alignment=1,
+        textColor=colors.black
+    )
+    style_label = ParagraphStyle(
+        "Lbl",
+        parent=styles["Normal"],
+        fontName="Helvetica-Bold",
+        fontSize=8,
+        leading=10,
+        textColor=colors.black
+    )
+    style_val = ParagraphStyle(
+        "Val",
+        parent=styles["Normal"],
+        fontName="Helvetica",
+        fontSize=8,
+        leading=10,
+        textColor=colors.black
+    )
+    # Table header styles (Inverted: White text on Black background)
+    style_th_c = ParagraphStyle(
+        "THC",
+        parent=styles["Normal"],
+        fontName="Helvetica-Bold",
+        fontSize=8,
+        leading=10,
+        textColor=colors.white,
+        alignment=1
+    )
+    style_th_l = ParagraphStyle(
+        "THL",
+        parent=styles["Normal"],
+        fontName="Helvetica-Bold",
+        fontSize=8,
+        leading=10,
+        textColor=colors.white,
+        alignment=0
+    )
+    style_th_r = ParagraphStyle(
+        "THR",
+        parent=styles["Normal"],
+        fontName="Helvetica-Bold",
+        fontSize=8,
+        leading=10,
+        textColor=colors.white,
+        alignment=2
+    )
+    # Table body styles (Black text on White background)
+    style_td = ParagraphStyle(
+        "TD",
+        parent=styles["Normal"],
+        fontName="Helvetica",
+        fontSize=8,
+        leading=10,
+        textColor=colors.black
+    )
+    style_td_c = ParagraphStyle(
+        "TDC",
+        parent=styles["Normal"],
+        fontName="Helvetica",
+        fontSize=8,
+        leading=10,
+        alignment=1,
+        textColor=colors.black
+    )
+    style_td_r = ParagraphStyle(
+        "TDR",
+        parent=styles["Normal"],
+        fontName="Helvetica",
+        fontSize=8,
+        leading=10,
+        alignment=2,
+        textColor=colors.black
+    )
+    style_td_r_bold = ParagraphStyle(
+        "TDRB",
+        parent=styles["Normal"],
+        fontName="Helvetica-Bold",
+        fontSize=8.5,
+        leading=11,
+        alignment=2,
+        textColor=colors.black
+    )
+    style_barcode = ParagraphStyle(
+        "Barcode",
+        parent=styles["Normal"],
+        fontName="Courier-Bold",
+        fontSize=12,
+        leading=14,
+        alignment=1,
+        textColor=colors.black
+    )
+    style_sig = ParagraphStyle(
+        "Sig",
+        parent=styles["Normal"],
+        fontName="Helvetica",
+        fontSize=8,
+        leading=11,
+        alignment=1,
+        textColor=colors.black
+    )
+    style_footer = ParagraphStyle(
+        "Foot",
+        parent=styles["Normal"],
+        fontName="Helvetica",
+        fontSize=7.5,
+        leading=9.5,
+        alignment=1,
+        textColor=colors.black
+    )
 
     story = []
 
-    # 1. Header Banner
+    # =========================================================================
+    # 1. HEADER SECTION (Hospital Branding & Divider)
+    # =========================================================================
     story.append(Paragraph(h_name.upper(), style_h_name))
     if h_tag:
         story.append(Paragraph(h_tag, style_h_sub))
-    story.append(Paragraph(f"{h_addr} • Phone: {h_phone}", style_h_sub))
-    story.append(Spacer(1, 3 * mm))
+    story.append(Paragraph(f"{h_addr} • Hotline: {h_phone}", style_h_sub))
+    
+    # Crisp Solid Black Divider separating header from transaction info
+    story.append(HRFlowable(width="100%", thickness=1.2, color=colors.black, spaceBefore=2 * mm, spaceAfter=2.5 * mm))
 
-    # Badge Box for Document Type
-    badge_table = Table([[Paragraph("DIAGNOSTIC MONEY RECEIPT / BILL", style_doc_title)]], colWidths=[128 * mm])
+    # Bordered Invoice Title Box: "DIAGNOSTIC MONEY RECEIPT / BILL"
+    badge_table = Table(
+        [[Paragraph("DIAGNOSTIC MONEY RECEIPT / BILL", style_doc_title)]],
+        colWidths=[128 * mm]
+    )
     badge_table.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#f1f5f9")),
         ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-        ("TOPPADDING", (0, 0), (-1, -1), 3),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
-        ("LINEBELOW", (0, 0), (-1, -1), 1, colors.HexColor("#cbd5e1")),
-        ("LINEABOVE", (0, 0), (-1, -1), 1, colors.HexColor("#cbd5e1")),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("TOPPADDING", (0, 0), (-1, -1), 2.5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 2.5),
+        ("BACKGROUND", (0, 0), (-1, -1), colors.white),
+        ("BOX", (0, 0), (-1, -1), 1.0, colors.black),
     ]))
     story.append(badge_table)
-    story.append(Spacer(1, 3 * mm))
+    story.append(Spacer(1, 2.5 * mm))
 
-    # 2. Patient & Voucher Details Table
+    # =========================================================================
+    # 2. PATIENT & VOUCHER INFORMATION GRID (Clean 2-Column Grid)
+    # =========================================================================
     p_age = voucher.get("patient_age", 0)
     p_sex = voucher.get("patient_gender", "Male")
     c_date = str(voucher.get("created_at", datetime.now().strftime("%Y-%m-%d %H:%M")))[:16]
@@ -152,138 +285,179 @@ def generate_voucher_pdf(voucher: Dict[str, Any], output_dir: Optional[str] = No
 
     patient_grid = [
         [
-            Paragraph("<b>Voucher No:</b>", style_label), Paragraph(v_no, style_val),
-            Paragraph("<b>Date / Time:</b>", style_label), Paragraph(c_date, style_val)
+            Paragraph("<b>Voucher No:</b>", style_label), Paragraph(str(v_no), style_val),
+            Paragraph("<b>Date / Time:</b>", style_label), Paragraph(str(c_date), style_val)
         ],
         [
             Paragraph("<b>Patient Name:</b>", style_label), Paragraph(str(voucher.get("patient_name", "")), style_val),
-            Paragraph("<b>Age / Gender:</b>", style_label), Paragraph(f"{p_age} Years / {p_sex}", style_val)
+            Paragraph("<b>Age / Gender:</b>", style_label), Paragraph(f"{p_age} Y / {p_sex}", style_val)
         ],
         [
             Paragraph("<b>Phone:</b>", style_label), Paragraph(str(voucher.get("patient_phone", "N/A")), style_val),
             Paragraph("<b>Ref. Doctor:</b>", style_label), Paragraph(str(ref_by), style_val)
         ],
     ]
-    p_table = Table(patient_grid, colWidths=[24 * mm, 40 * mm, 24 * mm, 40 * mm])
+    p_table = Table(patient_grid, colWidths=[22 * mm, 42 * mm, 22 * mm, 42 * mm])
     p_table.setStyle(TableStyle([
-        ("TOPPADDING", (0, 0), (-1, -1), 1.5),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 1.5),
+        ("TOPPADDING", (0, 0), (-1, -1), 2),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+        ("LEFTPADDING", (0, 0), (-1, -1), 3),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 3),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#fafafa")),
-        ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#e2e8f0")),
+        ("BACKGROUND", (0, 0), (-1, -1), colors.white),
+        ("BOX", (0, 0), (-1, -1), 0.8, colors.black),
+        ("INNERGRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#cccccc")),
     ]))
     story.append(p_table)
-    story.append(Spacer(1, 3 * mm))
+    story.append(Spacer(1, 2.5 * mm))
 
-    # 3. Diagnostic Tests Line Items Table
+    # =========================================================================
+    # 3. TEST ITEMS TABLE LAYOUT (Inverted Black Header, Clean Borders)
+    # =========================================================================
     test_rows = [
         [
-            Paragraph("#", style_th),
-            Paragraph("Code", style_th),
-            Paragraph("Diagnostic Test Name", style_th),
-            Paragraph("Sample", style_th),
-            Paragraph("Qty", style_th),
-            Paragraph(f"Price ({curr})", style_th),
-            Paragraph(f"Total ({curr})", style_th)
+            Paragraph("#", style_th_c),
+            Paragraph("Code", style_th_c),
+            Paragraph("Diagnostic Test Name", style_th_l),
+            Paragraph("Sample", style_th_c),
+            Paragraph("Qty", style_th_c),
+            Paragraph(f"Price ({curr})", style_th_r),
+            Paragraph(f"Total ({curr})", style_th_r)
         ]
     ]
 
     items = voucher.get("items", [])
     for idx, item in enumerate(items, 1):
+        sample = item.get("sample_type") or item.get("sample") or "Blood"
         test_rows.append([
-            Paragraph(str(idx), style_td),
-            Paragraph(str(item.get("test_code", "")), style_td),
+            Paragraph(str(idx), style_td_c),
+            Paragraph(str(item.get("test_code", "")), style_td_c),
             Paragraph(str(item.get("test_name", "")), style_td),
-            Paragraph(str(item.get("sample_type", "Blood")), style_td),
-            Paragraph(str(item.get("quantity", 1)), style_td),
+            Paragraph(str(sample), style_td_c),
+            Paragraph(str(item.get("quantity", 1)), style_td_c),
             Paragraph(f"{float(item.get('unit_price', item.get('price', 0))):.2f}", style_td_r),
             Paragraph(f"{float(item.get('item_total', 0)):.2f}", style_td_r),
         ])
 
-    items_table = Table(test_rows, colWidths=[8 * mm, 14 * mm, 46 * mm, 20 * mm, 10 * mm, 15 * mm, 15 * mm])
+    items_table = Table(test_rows, colWidths=[8 * mm, 16 * mm, 44 * mm, 18 * mm, 10 * mm, 16 * mm, 16 * mm])
     t_style = [
-        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0f766e")),
-        ("ALIGN", (0, 0), (-1, 0), "CENTER"),
+        ("BACKGROUND", (0, 0), (-1, 0), colors.black),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("TOPPADDING", (0, 0), (-1, -1), 2),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
-        ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#cbd5e1")),
+        ("TOPPADDING", (0, 0), (-1, -1), 2.5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 2.5),
+        ("LEFTPADDING", (0, 0), (-1, -1), 2),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 2),
+        ("BACKGROUND", (0, 1), (-1, -1), colors.white),
+        ("BOX", (0, 0), (-1, -1), 0.8, colors.black),
+        ("LINEBELOW", (0, 1), (-1, -1), 0.5, colors.HexColor("#cccccc")),
     ]
-    # Zebra striping
-    for i in range(1, len(test_rows)):
-        if i % 2 == 0:
-            t_style.append(("BACKGROUND", (0, i), (-1, i), colors.HexColor("#f8fafc")))
-
     items_table.setStyle(TableStyle(t_style))
     story.append(items_table)
-    story.append(Spacer(1, 3 * mm))
+    story.append(Spacer(1, 2.5 * mm))
 
-    # 4. Financial Calculations Block
+    # =========================================================================
+    # 4. SUMMARY & PAYMENT BOX (Positioned directly beneath table)
+    # =========================================================================
     subtotal = float(voucher.get("subtotal", 0.0))
     disc_amt = float(voucher.get("discount_amount", 0.0))
+    disc_val = float(voucher.get("discount_val", 0.0))
+    disc_type = voucher.get("discount_type", "fixed")
     total = float(voucher.get("total_amount", 0.0))
     paid = float(voucher.get("paid_amount", 0.0))
     due = float(voucher.get("due_amount", 0.0))
-    method = voucher.get("payment_method", "CASH")
-    status = voucher.get("payment_status", "PAID")
+    method = str(voucher.get("payment_method", "CASH")).upper()
+    printed_count = int(voucher.get("printed_count", 1))
 
-    due_color = colors.HexColor("#dc2626") if due > 0 else colors.HexColor("#059669")
-    status_text = f"DUE ({curr} {due:.2f})" if due > 0 else "PAID IN FULL"
+    # Monochrome Status Text
+    status_text = "PAID IN FULL" if due <= 0 else f"DUE ({curr} {due:.2f})"
+    dup_badge = "(Original)" if printed_count <= 1 else f"(Re-print #{printed_count})"
+    disc_label = f"Discount ({disc_val:.0f}%):" if disc_type == "percent" and disc_val > 0 else "Discount:"
 
     fin_grid = [
         [
             Paragraph("<b>Payment Status:</b>", style_label),
-            Paragraph(f"<b><font color='{due_color.hexval()}'>{status_text}</font></b> (Method: {method})", style_val),
-            Paragraph("<b>Subtotal:</b>", style_td_r), Paragraph(f"{curr} {subtotal:.2f}", style_td_r)
+            Paragraph(f"<b>{status_text}</b>", style_val),
+            Paragraph("Subtotal:", style_td_r),
+            Paragraph(f"{curr} {subtotal:.2f}", style_td_r)
         ],
         [
-            Paragraph("<b>Printed Count:</b>", style_label), Paragraph(str(voucher.get("printed_count", 1)), style_val),
-            Paragraph("<b>Discount:</b>", style_td_r), Paragraph(f"-{curr} {disc_amt:.2f}", style_td_r)
+            Paragraph("<b>Method / Mode:</b>", style_label),
+            Paragraph(f"{method}", style_val),
+            Paragraph(disc_label, style_td_r),
+            Paragraph(f"-{curr} {disc_amt:.2f}", style_td_r)
         ],
         [
-            Paragraph("", style_label), Paragraph("", style_val),
-            Paragraph("<b>NET PAYABLE:</b>", style_td_r), Paragraph(f"<b>{curr} {total:.2f}</b>", style_td_r)
+            Paragraph("<b>Printed Count:</b>", style_label),
+            Paragraph(f"<b>{printed_count}</b> {dup_badge}", style_val),
+            Paragraph("<b>NET PAYABLE:</b>", style_td_r_bold),
+            Paragraph(f"<b>{curr} {total:.2f}</b>", style_td_r_bold)
         ],
         [
-            Paragraph("", style_label), Paragraph("", style_val),
-            Paragraph("<b>Paid Amount:</b>", style_td_r), Paragraph(f"{curr} {paid:.2f}", style_td_r)
+            Paragraph("<b>Delivery:</b>", style_label),
+            Paragraph("Within 24 Hours", style_val),
+            Paragraph("Paid Amount:", style_td_r),
+            Paragraph(f"{curr} {paid:.2f}", style_td_r)
         ],
         [
-            Paragraph("", style_label), Paragraph("", style_val),
-            Paragraph("<b>Balance Due:</b>", style_td_r), Paragraph(f"<b><font color='{due_color.hexval()}'>{curr} {due:.2f}</font></b>", style_td_r)
+            Paragraph("<b>Bill Type:</b>", style_label),
+            Paragraph("Diagnostic Receipt", style_val),
+            Paragraph("<b>Balance Due:</b>", style_td_r_bold),
+            Paragraph(f"<b>{curr} {due:.2f}</b>", style_td_r_bold)
         ]
     ]
 
-    fin_table = Table(fin_grid, colWidths=[26 * mm, 42 * mm, 30 * mm, 30 * mm])
+    # ColWidths: Left status box (24mm + 36mm = 60mm), Right summary box (36mm + 32mm = 68mm) -> Total 128mm
+    fin_table = Table(fin_grid, colWidths=[24 * mm, 36 * mm, 36 * mm, 32 * mm])
     fin_table.setStyle(TableStyle([
-        ("TOPPADDING", (0, 0), (-1, -1), 1.5),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 1.5),
-        ("BACKGROUND", (2, 2), (-1, 2), colors.HexColor("#f0fdfa")),
-        ("LINEBELOW", (2, 2), (-1, 2), 1, colors.HexColor("#0d9488")),
-        ("BOX", (2, 0), (-1, -1), 0.5, colors.HexColor("#cbd5e1")),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("TOPPADDING", (0, 0), (-1, -1), 2),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+        ("LEFTPADDING", (0, 0), (-1, -1), 3),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 3),
+        ("BACKGROUND", (0, 0), (-1, -1), colors.white),
+        # Left Panel (Payment Status & Audit Info)
+        ("BOX", (0, 0), (1, -1), 0.8, colors.black),
+        ("INNERGRID", (0, 0), (1, -1), 0.5, colors.HexColor("#e5e5e5")),
+        # Right Panel (Financial Summary)
+        ("BOX", (2, 0), (3, -1), 0.8, colors.black),
+        ("LINEBELOW", (2, 0), (3, 1), 0.5, colors.HexColor("#e5e5e5")),
+        ("LINEBELOW", (2, 3), (3, 3), 0.5, colors.HexColor("#e5e5e5")),
+        # Net Payable row (solid black top and bottom borders)
+        ("LINEABOVE", (2, 2), (3, 2), 1.2, colors.black),
+        ("LINEBELOW", (2, 2), (3, 2), 1.2, colors.black),
     ]))
     story.append(KeepTogether(fin_table))
-    story.append(Spacer(1, 4 * mm))
+    story.append(Spacer(1, 3.5 * mm))
 
-    # 5. Signatures and Barcode Footer
+    # =========================================================================
+    # 5. FOOTER, BARCODE & SIGNATURES
+    # =========================================================================
+    # Barcode Representation centered in monospace
     story.append(Paragraph(f"*{v_no}*", style_barcode))
     story.append(Spacer(1, 4 * mm))
 
+    # Two Signatures separated with space-between
     sig_table = Table([
-        [Paragraph("____________________<br/>Patient Signature", style_footer),
-         Paragraph("____________________<br/>Authorized Signature", style_footer)]
+        [
+            Paragraph("______________________________<br/><b>Patient Signature</b>", style_sig),
+            Paragraph("______________________________<br/><b>Authorized Signature</b>", style_sig)
+        ]
     ], colWidths=[64 * mm, 64 * mm])
     sig_table.setStyle(TableStyle([
         ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+        ("VALIGN", (0, 0), (-1, -1), "BOTTOM"),
+        ("TOPPADDING", (0, 0), (-1, -1), 2),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
     ]))
     story.append(sig_table)
-    story.append(Spacer(1, 2 * mm))
+    story.append(Spacer(1, 2.5 * mm))
 
+    # Terms & Disclaimer Centered at the very bottom
     if footer_text:
         story.append(Paragraph(footer_text, style_footer))
 
     doc.build(story)
-    print(f"[PDFGenerator] Saved Voucher PDF: {filepath}")
+    print(f"[PDFGenerator] Saved Monochrome Voucher PDF: {filepath}")
     return filepath
 
 
