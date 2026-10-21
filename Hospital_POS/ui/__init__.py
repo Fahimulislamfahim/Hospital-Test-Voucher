@@ -1,0 +1,3 @@
+"""
+Hospital POS UI Package
+"""

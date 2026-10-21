@@ -1,0 +1,36 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Local SQLite databases (Auto-generated on first launch)
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.snapshot.tmp
+
+# Hardware License Files
+*.lic
+
+# Local Receipt Previews
+**/receipt_previews/*.txt
+**/receipt_previews/*.html
+!**/receipt_previews/.gitkeep
+
+# PyInstaller Build Output
+build/
+dist/
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+
+# OS and IDE files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

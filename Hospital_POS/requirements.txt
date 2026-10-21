@@ -1,0 +1,28 @@
+# ==============================================================================
+# Hospital POS & Billing System - Dependencies
+# Target Platform: Windows 7 (32-bit / 64-bit)
+# Target Runtime: Python 3.8.10 (32-bit / x86)
+# Note: Pinned strictly to versions with verified win32/cp38 pre-compiled wheels.
+# ==============================================================================
+
+# Direct Silent Windows Printing (Win32Print, Win32API, Win32UI)
+pywin32==306
+
+# Licensing API, Network Checks & Telegram Cloud Backup
+requests==2.31.0
+urllib3==1.26.18
+certifi==2024.2.2
+idna==3.7
+charset-normalizer==3.3.2
+
+# Hardware ID Encryption & Secure .lic Token Protection
+cryptography==41.0.7
+
+# Modern GUI Theming for Tkinter (Runs on pure Tkinter without OpenGL)
+ttkbootstrap==1.10.1
+
+# Receipt & Barcode / Logo Rendering (Pillow 9.5.0 is the last version supporting Python 3.8)
+Pillow==9.5.0
+
+# Executable Packaging for Windows 7 32-bit
+pyinstaller==5.13.2
