@@ -257,8 +257,12 @@ class AdminPanelWindow:
 
         self._all_tests_cache: list = []  # cache for filtering
 
+        # Wrap tree+scrollbar so vertical pack layout of the tab is not broken
+        tree_frame = tk.Frame(parent, bg="#f8fafc")
+        tree_frame.pack(fill=tk.BOTH, expand=True, pady=4)
+
         cols = ("id", "code", "name", "cat", "price", "cost", "sample", "delivery")
-        self.tests_tree = ttk.Treeview(parent, columns=cols, show="headings", selectmode="browse")
+        self.tests_tree = ttk.Treeview(tree_frame, columns=cols, show="headings", selectmode="browse")
 
         self.tests_tree.heading("id", text="ID")
         self.tests_tree.heading("code", text="Shortcode")
@@ -278,11 +282,11 @@ class AdminPanelWindow:
         self.tests_tree.column("sample", width=100, anchor=tk.CENTER)
         self.tests_tree.column("delivery", width=100, anchor=tk.CENTER)
 
-        scrollbar = ttk.Scrollbar(parent, orient=tk.VERTICAL, command=self.tests_tree.yview)
+        scrollbar = ttk.Scrollbar(tree_frame, orient=tk.VERTICAL, command=self.tests_tree.yview)
         self.tests_tree.configure(yscrollcommand=scrollbar.set)
 
-        self.tests_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, pady=4)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y, pady=4)
+        self.tests_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 
         self._refresh_tests_tree()
 
