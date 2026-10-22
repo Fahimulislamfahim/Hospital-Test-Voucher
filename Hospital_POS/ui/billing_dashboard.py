@@ -873,14 +873,18 @@ class BillingDashboard:
     def _refresh_cart_view(self):
         self.cart_tree.delete(*self.cart_tree.get_children())
         for idx, item in enumerate(self.cart_items, 1):
+            sample = item.get("sample_type") or item.get("sample", "Blood")
+            qty = int(item.get("quantity", 1))
+            price = float(item.get("price", 0.0))
+            tot = float(item.get("item_total", price * qty))
             self.cart_tree.insert("", tk.END, values=(
                 idx,
-                item["test_code"],
-                item["test_name"],
-                item["sample_type"],
-                item["quantity"],
-                f"{item['price']:.2f}",
-                f"{item['item_total']:.2f}"
+                item.get("test_code", ""),
+                item.get("test_name", ""),
+                sample,
+                qty,
+                f"{price:.2f}",
+                f"{tot:.2f}"
             ))
         self.item_count_lbl.configure(text=f"Total Tests: {len(self.cart_items)}")
 
@@ -891,7 +895,7 @@ class BillingDashboard:
 
     def _recalculate(self, update_due_only: bool = False):
         curr = database.get_setting("currency_symbol", "Tk")
-        subtotal = sum(item["item_total"] for item in self.cart_items)
+        subtotal = round(sum(float(item.get("item_total", float(item.get("price", 0.0)) * int(item.get("quantity", 1)))) for item in self.cart_items), 2)
         self.subtotal_lbl.configure(text=f"{curr} {subtotal:.2f}")
 
         # Discount
@@ -1046,14 +1050,19 @@ class BillingDashboard:
                 discount_data=discount_data,
                 payment_data=payment_data
             )
+
+            # 2. Trigger Silent Print (No Dialogs!)
+            # This cleanly increments printed_count from 0 to 1 in DB and sets voucher["printed_count"] = 1
+            print_res = printer_engine.print_voucher_silently(voucher)
             self.last_created_voucher = voucher
 
-            # 2. Automatically generate and archive PDF & JSON text copies
-            pdf_path = None
-            try:
-                pdf_path = pdf_generator.generate_voucher_pdf(voucher)
-            except Exception as pdf_err:
-                print(f"[Dashboard] Warning: PDF archiving failed: {pdf_err}")
+            # 3. Automatically generate and archive PDF & JSON text copies (with printed_count = 1)
+            pdf_path = print_res.get("pdf_path")
+            if not pdf_path:
+                try:
+                    pdf_path = pdf_generator.generate_voucher_pdf(voucher)
+                except Exception as pdf_err:
+                    print(f"[Dashboard] Warning: PDF archiving failed: {pdf_err}")
 
             json_path = None
             try:
@@ -1062,9 +1071,6 @@ class BillingDashboard:
                 data_vault.trigger_async_mongo_sync(voucher)
             except Exception as json_err:
                 print(f"[Dashboard] Warning: JSON archiving failed: {json_err}")
-
-            # 3. Trigger Silent Print (No Dialogs!)
-            print_res = printer_engine.print_voucher_silently(voucher)
             
             # Show toast / footer update
             v_no = voucher["voucher_no"]
@@ -1092,6 +1098,11 @@ class BillingDashboard:
             return
 
         res = printer_engine.print_voucher_silently(self.last_created_voucher)
+        v_id = self.last_created_voucher.get("id")
+        if v_id:
+            v_refreshed = database.get_voucher_by_id(v_id)
+            if v_refreshed:
+                self.last_created_voucher = v_refreshed
         self.footer_status.configure(text=f"🔁 Re-printed: {self.last_created_voucher['voucher_no']}")
         messagebox.showinfo("Reprint Sent", f"Reprint job sent silently to printer:\n{res['message']}")
 
@@ -1192,6 +1203,7 @@ class BillingDashboard:
         v = database.get_voucher_by_no(v_no)
         if v:
             res = printer_engine.print_voucher_silently(v)
+            self.refresh_recent_vouchers()
             self._set_status(f"🔁 Re-printed: {v_no}", color="#38bdf8", auto_clear_ms=6000)
             messagebox.showinfo("Reprint Sent", f"Reprinting voucher {v_no}:\n{res['message']}", parent=self.root)
 
@@ -1614,9 +1626,9 @@ class BillingDashboard:
                 return
             res = printer_engine.print_voucher_silently(v)
             messagebox.showinfo("Reprint Sent", f"Voucher {v['voucher_no']} sent to printer:\n{res['message']}", parent=win)
-            database.increment_print_count(v["id"])
             v_refreshed = database.get_voucher_by_id(v["id"])
             if v_refreshed:
+                selected_voucher_holder[0] = v_refreshed
                 _display_voucher_in_inspector(v_refreshed)
 
         def _open_pdf_inspected():

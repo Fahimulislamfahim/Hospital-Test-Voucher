@@ -16,11 +16,12 @@ from config import DB_PATH
 _db_lock = threading.RLock()
 
 
-def get_connection(db_path: str = DB_PATH) -> sqlite3.Connection:
+def get_connection(db_path: Optional[str] = None) -> sqlite3.Connection:
     """
     Establish and configure a connection to SQLite database.
     Enables WAL mode and foreign key constraints for robust reliability on Windows 7.
     """
+    db_path = db_path or DB_PATH
     conn = sqlite3.connect(db_path, timeout=15.0)
     conn.row_factory = sqlite3.Row
     # Enforce foreign key constraints
@@ -31,7 +32,7 @@ def get_connection(db_path: str = DB_PATH) -> sqlite3.Connection:
     return conn
 
 
-def init_db(db_path: str = DB_PATH):
+def init_db(db_path: Optional[str] = None):
     """
     Create the complete database schema and seed initial baseline data
     if tables are empty.
@@ -229,11 +230,12 @@ def _seed_default_data(conn: sqlite3.Connection):
 # VOUCHER NUMBER GENERATION
 # ==============================================================================
 
-def generate_voucher_no(db_path: str = DB_PATH) -> str:
+def generate_voucher_no(db_path: Optional[str] = None) -> str:
     """
     Generate sequential daily voucher number in format: V-YYYYMMDD-XXXX
     Example: V-20261021-0001
     """
+    db_path = db_path or DB_PATH
     today_prefix = datetime.now().strftime("V-%Y%m%d-")
     with _db_lock:
         conn = get_connection(db_path)
@@ -263,7 +265,7 @@ def generate_voucher_no(db_path: str = DB_PATH) -> str:
 # TEST AUTOCOMPLETE & SEARCH (Zero-Mouse Optimization)
 # ==============================================================================
 
-def search_tests(query: str, limit: int = 15, db_path: str = DB_PATH) -> List[Dict[str, Any]]:
+def search_tests(query: str, limit: int = 15, db_path: Optional[str] = None) -> List[Dict[str, Any]]:
     """
     Fast search for autocomplete.
     Matches exact shortcode, code prefix, or name substring.
@@ -301,7 +303,7 @@ def search_tests(query: str, limit: int = 15, db_path: str = DB_PATH) -> List[Di
         return rows
 
 
-def get_test_by_exact_code(code: str, db_path: str = DB_PATH) -> Optional[Dict[str, Any]]:
+def get_test_by_exact_code(code: str, db_path: Optional[str] = None) -> Optional[Dict[str, Any]]:
     """Lookup test by exact code or shortcode (case-insensitive)."""
     with _db_lock:
         conn = get_connection(db_path)
@@ -317,6 +319,10 @@ def get_test_by_exact_code(code: str, db_path: str = DB_PATH) -> Optional[Dict[s
         return dict(row) if row else None
 
 
+# Friendly alias
+get_test_by_code = get_test_by_exact_code
+
+
 # ==============================================================================
 # VOUCHER CRUD & ATOMIC TRANSACTION
 # ==============================================================================
@@ -326,7 +332,7 @@ def create_voucher(
     items: List[Dict[str, Any]],
     discount_data: Optional[Dict[str, Any]] = None,
     payment_data: Optional[Dict[str, Any]] = None,
-    db_path: str = DB_PATH
+    db_path: Optional[str] = None
 ) -> Dict[str, Any]:
     """
     Atomically creates a voucher and all associated voucher_items in a single transaction.
@@ -340,7 +346,7 @@ def create_voucher(
         raise ValueError("Cannot create a voucher with zero items.")
 
     # Calculate Subtotal
-    subtotal = sum(float(item["price"]) * int(item.get("quantity", 1)) for item in items)
+    subtotal = round(sum(float(item["price"]) * int(item.get("quantity", 1)) for item in items), 2)
 
     # Calculate Discount
     discount_type = (discount_data or {}).get("type", "fixed")
@@ -377,13 +383,14 @@ def create_voucher(
             # Generate unique voucher number
             voucher_no = generate_voucher_no(db_path)
 
+            now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             cursor.execute("""
                 INSERT INTO vouchers (
                     voucher_no, patient_name, patient_age, patient_gender, patient_phone,
                     referred_by, subtotal, discount_type, discount_val, discount_amount,
                     total_amount, paid_amount, due_amount, payment_method, payment_status,
-                    remarks, created_by
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                    remarks, created_by, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
             """, (
                 voucher_no,
                 patient_data.get("name", "").strip(),
@@ -401,7 +408,8 @@ def create_voucher(
                 payment_method,
                 payment_status,
                 remarks,
-                patient_data.get("created_by", "Reception")
+                patient_data.get("created_by", "Reception"),
+                now_str
             ))
 
             voucher_id = cursor.lastrowid
@@ -412,13 +420,19 @@ def create_voucher(
                 qty = int(item.get("quantity", 1))
                 item_total = round(unit_price * qty, 2)
 
+                t_id = item.get("test_id")
+                if t_id is not None:
+                    cursor.execute("SELECT id FROM tests WHERE id = ?;", (t_id,))
+                    if not cursor.fetchone():
+                        t_id = None
+
                 cursor.execute("""
                     INSERT INTO voucher_items (
                         voucher_id, test_id, test_code, test_name, unit_price, quantity, item_total
                     ) VALUES (?, ?, ?, ?, ?, ?, ?);
                 """, (
                     voucher_id,
-                    item.get("test_id"),
+                    t_id,
                     item.get("test_code", ""),
                     item.get("test_name", ""),
                     unit_price,
@@ -438,7 +452,7 @@ def create_voucher(
             conn.close()
 
 
-def get_voucher_by_id(voucher_id: int, db_path: str = DB_PATH) -> Optional[Dict[str, Any]]:
+def get_voucher_by_id(voucher_id: int, db_path: Optional[str] = None) -> Optional[Dict[str, Any]]:
     """Fetch complete voucher record including all items by ID."""
     with _db_lock:
         conn = get_connection(db_path)
@@ -458,7 +472,7 @@ def get_voucher_by_id(voucher_id: int, db_path: str = DB_PATH) -> Optional[Dict[
         return voucher
 
 
-def get_voucher_by_no(voucher_no: str, db_path: str = DB_PATH) -> Optional[Dict[str, Any]]:
+def get_voucher_by_no(voucher_no: str, db_path: Optional[str] = None) -> Optional[Dict[str, Any]]:
     """Fetch complete voucher record including all items by voucher number."""
     with _db_lock:
         conn = get_connection(db_path)
@@ -471,8 +485,8 @@ def get_voucher_by_no(voucher_no: str, db_path: str = DB_PATH) -> Optional[Dict[
         return get_voucher_by_id(row["id"], db_path=db_path)
 
 
-def increment_print_count(voucher_id: int, db_path: str = DB_PATH):
-    """Increment printed count and timestamp for audit purposes."""
+def increment_print_count(voucher_id: int, db_path: Optional[str] = None) -> int:
+    """Increment printed count and timestamp for audit purposes. Returns updated printed_count."""
     with _db_lock:
         conn = get_connection(db_path)
         cursor = conn.cursor()
@@ -481,11 +495,14 @@ def increment_print_count(voucher_id: int, db_path: str = DB_PATH):
             SET printed_count = printed_count + 1, last_printed_at = CURRENT_TIMESTAMP
             WHERE id = ?;
         """, (voucher_id,))
+        cursor.execute("SELECT printed_count FROM vouchers WHERE id = ?;", (voucher_id,))
+        row = cursor.fetchone()
         conn.commit()
         conn.close()
+        return row["printed_count"] if row else 1
 
 
-def get_recent_vouchers(limit: int = 50, db_path: str = DB_PATH) -> List[Dict[str, Any]]:
+def get_recent_vouchers(limit: int = 50, db_path: Optional[str] = None) -> List[Dict[str, Any]]:
     """Fetch list of most recent vouchers for billing dashboard table."""
     with _db_lock:
         conn = get_connection(db_path)
@@ -508,7 +525,7 @@ def search_vouchers_advanced(
     date_to: Optional[str] = None,
     status: str = "ALL",
     limit: int = 300,
-    db_path: str = DB_PATH
+    db_path: Optional[str] = None
 ) -> List[Dict[str, Any]]:
     """
     Search and filter vouchers with full search on voucher_no, patient_name,
@@ -562,7 +579,7 @@ def collect_voucher_due_payment(
     amount_paid: float,
     payment_method: str = "CASH",
     remarks: str = "",
-    db_path: str = DB_PATH
+    db_path: Optional[str] = None
 ) -> Optional[Dict[str, Any]]:
     """Record due collection on an existing voucher, update paid/due amounts and status."""
     with _db_lock:
@@ -617,7 +634,7 @@ def collect_voucher_due_payment(
 # DAILY SUMMARY & REPORTING
 # ==============================================================================
 
-def get_daily_summary(date_str: Optional[str] = None, db_path: str = DB_PATH) -> Dict[str, Any]:
+def get_daily_summary(date_str: Optional[str] = None, db_path: Optional[str] = None) -> Dict[str, Any]:
     """
     Get aggregated totals for a given date (defaults to today).
     date_str format: 'YYYY-MM-DD'
@@ -638,16 +655,16 @@ def get_daily_summary(date_str: Optional[str] = None, db_path: str = DB_PATH) ->
                 COALESCE(SUM(paid_amount), 0.0) as total_collected,
                 COALESCE(SUM(due_amount), 0.0) as total_due
             FROM vouchers
-            WHERE DATE(created_at) = DATE(?);
-        """, (date_str,))
+            WHERE DATE(created_at) = DATE(?) OR DATE(created_at, 'localtime') = DATE(?);
+        """, (date_str, date_str))
         summary = dict(cursor.fetchone())
 
         cursor.execute("""
             SELECT COUNT(vi.id) as total_tests_conducted
             FROM voucher_items vi
             JOIN vouchers v ON vi.voucher_id = v.id
-            WHERE DATE(v.created_at) = DATE(?);
-        """, (date_str,))
+            WHERE DATE(v.created_at) = DATE(?) OR DATE(v.created_at, 'localtime') = DATE(?);
+        """, (date_str, date_str))
         summary["total_tests"] = cursor.fetchone()["total_tests_conducted"]
 
         conn.close()
@@ -658,7 +675,7 @@ def get_daily_summary(date_str: Optional[str] = None, db_path: str = DB_PATH) ->
 # TESTS & CATEGORIES CRUD (For Admin Panel)
 # ==============================================================================
 
-def get_all_categories(db_path: str = DB_PATH) -> List[Dict[str, Any]]:
+def get_all_categories(db_path: Optional[str] = None) -> List[Dict[str, Any]]:
     """Get all test categories."""
     with _db_lock:
         conn = get_connection(db_path)
@@ -669,7 +686,7 @@ def get_all_categories(db_path: str = DB_PATH) -> List[Dict[str, Any]]:
         return rows
 
 
-def add_category(name: str, code: str, description: str = "", db_path: str = DB_PATH) -> int:
+def add_category(name: str, code: str, description: str = "", db_path: Optional[str] = None) -> int:
     """Add a new category."""
     with _db_lock:
         conn = get_connection(db_path)
@@ -684,7 +701,7 @@ def add_category(name: str, code: str, description: str = "", db_path: str = DB_
         return cat_id
 
 
-def get_all_tests(active_only: bool = True, db_path: str = DB_PATH) -> List[Dict[str, Any]]:
+def get_all_tests(active_only: bool = True, db_path: Optional[str] = None) -> List[Dict[str, Any]]:
     """Get all tests with category information."""
     with _db_lock:
         conn = get_connection(db_path)
@@ -702,7 +719,7 @@ def get_all_tests(active_only: bool = True, db_path: str = DB_PATH) -> List[Dict
         return rows
 
 
-def add_test(test_dict: Dict[str, Any], db_path: str = DB_PATH) -> int:
+def add_test(test_dict: Dict[str, Any], db_path: Optional[str] = None) -> int:
     """Add a new test."""
     with _db_lock:
         conn = get_connection(db_path)
@@ -725,7 +742,7 @@ def add_test(test_dict: Dict[str, Any], db_path: str = DB_PATH) -> int:
         return test_id
 
 
-def update_test(test_id: int, test_dict: Dict[str, Any], db_path: str = DB_PATH):
+def update_test(test_id: int, test_dict: Dict[str, Any], db_path: Optional[str] = None):
     """Update an existing test."""
     with _db_lock:
         conn = get_connection(db_path)
@@ -756,7 +773,7 @@ def update_test(test_id: int, test_dict: Dict[str, Any], db_path: str = DB_PATH)
         conn.close()
 
 
-def delete_test(test_id: int, db_path: str = DB_PATH):
+def delete_test(test_id: int, db_path: Optional[str] = None):
     """Soft delete test to preserve foreign keys on historic vouchers."""
     with _db_lock:
         conn = get_connection(db_path)
@@ -770,7 +787,7 @@ def delete_test(test_id: int, db_path: str = DB_PATH):
 # SETTINGS MANAGEMENT
 # ==============================================================================
 
-def get_setting(key: str, default: str = "", db_path: str = DB_PATH) -> str:
+def get_setting(key: str, default: str = "", db_path: Optional[str] = None) -> str:
     """Retrieve application setting value."""
     with _db_lock:
         conn = get_connection(db_path)
@@ -781,7 +798,7 @@ def get_setting(key: str, default: str = "", db_path: str = DB_PATH) -> str:
         return row["value"] if row else default
 
 
-def set_setting(key: str, value: str, db_path: str = DB_PATH):
+def set_setting(key: str, value: str, db_path: Optional[str] = None):
     """Store or update application setting."""
     with _db_lock:
         conn = get_connection(db_path)
@@ -794,7 +811,7 @@ def set_setting(key: str, value: str, db_path: str = DB_PATH):
         conn.close()
 
 
-def get_all_settings(db_path: str = DB_PATH) -> Dict[str, str]:
+def get_all_settings(db_path: Optional[str] = None) -> Dict[str, str]:
     """Retrieve dictionary of all application settings."""
     with _db_lock:
         conn = get_connection(db_path)
@@ -812,7 +829,7 @@ def get_all_settings(db_path: str = DB_PATH) -> Dict[str, str]:
 def restore_or_upsert_voucher(
     voucher_data: Dict[str, Any],
     overwrite_existing: bool = False,
-    db_path: str = DB_PATH
+    db_path: Optional[str] = None
 ) -> bool:
     """
     Safely restore or upsert a voucher record from JSON or MongoDB Atlas into SQLite.
@@ -907,7 +924,7 @@ def restore_or_upsert_voucher(
             conn.close()
 
 
-def get_all_vouchers_with_items(db_path: str = DB_PATH) -> List[Dict[str, Any]]:
+def get_all_vouchers_with_items(db_path: Optional[str] = None) -> List[Dict[str, Any]]:
     """Retrieve all vouchers with their complete line items for JSON export and cloud backup."""
     with _db_lock:
         conn = get_connection(db_path)
@@ -924,7 +941,7 @@ def get_all_vouchers_with_items(db_path: str = DB_PATH) -> List[Dict[str, Any]]:
     return result
 
 
-def get_full_database_dump_data(db_path: str = DB_PATH) -> Dict[str, Any]:
+def get_full_database_dump_data(db_path: Optional[str] = None) -> Dict[str, Any]:
     """Extract complete database as structured dictionaries ready for JSON text serialization."""
     with _db_lock:
         conn = get_connection(db_path)

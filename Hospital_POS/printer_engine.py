@@ -140,9 +140,13 @@ def generate_80mm_receipt_text(voucher: Dict[str, Any], settings: Optional[Dict[
     v_no = voucher.get("voucher_no", "V-00000000-0000")
     created_at = voucher.get("created_at", datetime.now().strftime("%Y-%m-%d %H:%M"))
     receptionist = voucher.get("created_by", "Reception")
+    p_cnt = int(voucher.get("printed_count", 0) or 0)
+    if p_cnt <= 0:
+        p_cnt = 1
+    p_badge = " (Original)" if p_cnt <= 1 else f" (Re-print #{p_cnt})"
 
     lines.append(row(f"Voucher: {v_no}", f"Date: {created_at[:16]}"))
-    lines.append(row(f"Operator: {receptionist}", f"Print Count: {voucher.get('printed_count', 0) + 1}"))
+    lines.append(row(f"Operator: {receptionist}", f"Print Count: {p_cnt}{p_badge}"))
     lines.append(sep_single)
 
     # Patient Information
@@ -164,16 +168,16 @@ def generate_80mm_receipt_text(voucher: Dict[str, Any], settings: Optional[Dict[
     items = voucher.get("items", [])
     for idx, item in enumerate(items, 1):
         code = item.get("test_code", "")
-        name = item.get("test_name", "")
+        name = str(item.get("test_name", ""))
         qty = item.get("quantity", 1)
         price = float(item.get("item_total", item.get("unit_price", 0)))
         
         # Display: first line has SL, short name, Qty, Price
         short_name = name[:28]
         lines.append(f"{idx:<3} {short_name:<30} {qty:<4} {price:>8.2f}")
-        # If test name is longer than 28 chars, print remainder on second line
-        if len(name) > 28:
-            lines.append(f"    {name[28:56]}")
+        # If test name is longer than 28 chars, wrap remainder cleanly
+        for chunk_start in range(28, len(name), 28):
+            lines.append(f"    {name[chunk_start:chunk_start+28]}")
 
     lines.append(sep_single)
 
@@ -213,6 +217,10 @@ def generate_80mm_receipt_text(voucher: Dict[str, Any], settings: Optional[Dict[
     return "\n".join(lines)
 
 
+# Universal alias for receipt formatting
+format_voucher_text = generate_80mm_receipt_text
+
+
 # ==============================================================================
 # 3. SILENT DIRECT PRINT PIPELINE
 # ==============================================================================
@@ -220,13 +228,14 @@ def generate_80mm_receipt_text(voucher: Dict[str, Any], settings: Optional[Dict[
 def print_voucher_silently(
     voucher: Dict[str, Any],
     printer_name: Optional[str] = None,
-    paper_size: Optional[str] = None
+    paper_size: Optional[str] = None,
+    db_path: Optional[str] = None
 ) -> Dict[str, Any]:
     """
     Execute 100% silent direct print without popping up any print dialog.
     
     Returns:
-        {'success': bool, 'message': str, 'printer': str, 'preview_file': str}
+        {'success': bool, 'message': str, 'printer': str, 'preview_file': str, 'printed_count': int}
     """
     if not printer_name:
         printer_name = get_target_printer()
@@ -238,9 +247,21 @@ def print_voucher_silently(
             pass
 
     if not paper_size:
-        paper_size = database.get_setting("paper_size", "80mm")
+        paper_size = database.get_setting("paper_size", "80mm", db_path=db_path) if db_path else database.get_setting("paper_size", "80mm")
 
-    settings = database.get_all_settings()
+    # Increment printed audit count in DB exactly once per print job
+    v_id = voucher.get("id")
+    if v_id:
+        if db_path:
+            new_count = database.increment_print_count(v_id, db_path=db_path)
+        else:
+            new_count = database.increment_print_count(v_id)
+        voucher["printed_count"] = new_count
+    else:
+        new_count = int(voucher.get("printed_count", 0) or 0) + 1
+        voucher["printed_count"] = new_count
+
+    settings = database.get_all_settings(db_path=db_path) if db_path else database.get_all_settings()
     receipt_text = generate_80mm_receipt_text(voucher, settings)
 
     # Always save a copy of the receipt preview locally
@@ -264,9 +285,6 @@ def print_voucher_silently(
     if is_virtual_pdf_printer(printer_name):
         import pdf_generator
         pdf_path = pdf_generator.generate_voucher_pdf(voucher)
-        v_id = voucher.get("id")
-        if v_id:
-            database.increment_print_count(v_id)
 
         # Also copy to Documents and OneDrive Documents folder for user convenience
         target_dirs = [
@@ -296,7 +314,8 @@ def print_voucher_silently(
             "message": f"Voucher PDF generated & opened: {os.path.basename(pdf_path)}",
             "printer": printer_name,
             "preview_file": preview_file,
-            "pdf_path": pdf_path
+            "pdf_path": pdf_path,
+            "printed_count": new_count
         }
 
     # If running on target Windows 7 PC with pywin32
@@ -323,16 +342,12 @@ def print_voucher_silently(
                 win32print.EndPagePrinter(h_printer)
                 win32print.EndDocPrinter(h_printer)
 
-                # Increment printed audit count in DB
-                v_id = voucher.get("id")
-                if v_id:
-                    database.increment_print_count(v_id)
-
                 return {
                     "success": True,
                     "message": f"Voucher {v_no} sent silently to printer '{printer_name}'.",
                     "printer": printer_name,
-                    "preview_file": preview_file
+                    "preview_file": preview_file,
+                    "printed_count": new_count
                 }
             finally:
                 win32print.ClosePrinter(h_printer)
@@ -341,31 +356,19 @@ def print_voucher_silently(
             # If RAW mode fails or printer is a GDI/Laser printer, fallback to GDI TextOut
             print(f"[PrinterEngine] RAW spool failed ({e}), attempting GDI DC print...")
             gdi_res = _print_via_gdi_dc(voucher, receipt_text, printer_name)
-            if gdi_res["success"]:
-                v_id = voucher.get("id")
-                if v_id:
-                    database.increment_print_count(v_id)
-                return gdi_res
-            else:
-                return {
-                    "success": False,
-                    "message": f"Print failed on '{printer_name}': {e}",
-                    "printer": printer_name,
-                    "preview_file": preview_file
-                }
+            gdi_res["printed_count"] = new_count
+            return gdi_res
     else:
         # Simulation Mode (for dev environment where pywin32 is uninstalled)
-        print(f"[PrinterEngine - SIMULATION] Silent print triggered for: {v_no}")
+        print(f"[PrinterEngine - SIMULATION] Silent print triggered for: {v_no} (Print #{new_count})")
         print(f"[PrinterEngine - SIMULATION] Spooled to preview: {preview_file}")
-        v_id = voucher.get("id")
-        if v_id:
-            database.increment_print_count(v_id)
 
         return {
             "success": True,
             "message": f"[Simulation] Voucher printed to preview file: {preview_file}",
             "printer": "Simulation_Virtual_Printer",
-            "preview_file": preview_file
+            "preview_file": preview_file,
+            "printed_count": new_count
         }
 
 
@@ -438,8 +441,10 @@ def generate_html_voucher(voucher: Dict[str, Any], settings: Optional[Dict[str, 
     p_gender = voucher.get("patient_gender", "Male")
     p_phone = voucher.get("patient_phone", "N/A")
     ref_by = voucher.get("referred_by", "Self / General")
-    created_at = str(voucher.get("created_at", ""))[:16]
-    printed_count = int(voucher.get("printed_count", 1))
+    created_at = str(voucher.get("created_at", datetime.now().strftime("%Y-%m-%d %H:%M")))[:16]
+    printed_count = int(voucher.get("printed_count", 0) or 0)
+    if printed_count <= 0:
+        printed_count = 1
 
     # Items Rows (7 Columns)
     items_html = ""
@@ -550,19 +555,19 @@ def generate_html_voucher(voucher: Dict[str, Any], settings: Optional[Dict[str, 
   .items-table {{
     width: 100%;
     border-collapse: collapse;
-    border: 1px solid #000000;
+    border: 1px solid #374151;
     margin-bottom: 8px;
   }}
   .items-table th {{
-    background: #000000 !important;
-    color: #ffffff !important;
+    background: #ffffff !important;
+    color: #000000 !important;
     font-weight: bold;
     padding: 4px 4px;
     font-size: 11px;
-    border: 1px solid #000000;
+    border: 1px solid #374151;
   }}
   .items-table td {{
-    border-bottom: 1px solid #cccccc;
+    border-bottom: 1px solid #e5e7eb;
     font-size: 11px;
   }}
   
@@ -576,13 +581,13 @@ def generate_html_voucher(voucher: Dict[str, Any], settings: Optional[Dict[str, 
   }}
   .status-box {{
     flex: 1;
-    border: 1px solid #000000;
+    border: 1px solid #374151;
     padding: 6px 8px;
     font-size: 11px;
   }}
   .fin-box {{
     flex: 1;
-    border: 1px solid #000000;
+    border: 1px solid #374151;
     font-size: 11px;
   }}
   .fin-table {{
@@ -598,25 +603,17 @@ def generate_html_voucher(voucher: Dict[str, Any], settings: Optional[Dict[str, 
     font-weight: bold;
   }}
   
-  /* Barcode & Signatures */
-  .barcode-box {{
-    text-align: center;
-    font-family: 'Courier New', Courier, monospace;
-    font-size: 16px;
-    font-weight: bold;
-    letter-spacing: 2px;
-    margin: 8px 0;
-  }}
+  /* Signatures & Footer */
   .sig-container {{
     display: flex;
     justify-content: space-between;
-    margin-top: 30px;
+    margin-top: 36px;
     padding: 0 10px;
   }}
   .sig-line {{
     width: 180px;
     text-align: center;
-    border-top: 1px solid #000000;
+    border-top: 1px solid #374151;
     padding-top: 4px;
     font-size: 11px;
     font-weight: bold;
@@ -624,7 +621,21 @@ def generate_html_voucher(voucher: Dict[str, Any], settings: Optional[Dict[str, 
   .disclaimer {{
     text-align: center;
     font-size: 9.5px;
+    color: #374151;
     margin-top: 12px;
+  }}
+  .auto-notice {{
+    text-align: center;
+    font-size: 9px;
+    font-style: italic;
+    color: #4b5563;
+    margin-top: 4px;
+  }}
+  .voucher-id-footer {{
+    text-align: center;
+    font-size: 9px;
+    color: #6b7280;
+    margin-top: 4px;
   }}
 </style>
 </head>
@@ -720,15 +731,15 @@ def generate_html_voucher(voucher: Dict[str, Any], settings: Optional[Dict[str, 
     </div>
   </div>
 
-  <!-- 5. Footer, Barcode & Signatures -->
-  <div class="barcode-box">*{v_no}*</div>
-
+  <!-- 5. Signatures & Bottom Footer -->
   <div class="sig-container">
-    <div class="sig-line">Patient Signature</div>
+    <div class="sig-line">Patient / Receiver Signature</div>
     <div class="sig-line">Authorized Signature</div>
   </div>
 
-  <div class="disclaimer">{footer}</div>
+  {f'<div class="disclaimer">{footer}</div>' if footer else ''}
+  <div class="auto-notice">This is an automated computer-generated voucher and digital receipt.</div>
+  <div class="voucher-id-footer">Voucher ID: {v_no}</div>
 
 </body>
 </html>"""

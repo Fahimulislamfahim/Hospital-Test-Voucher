@@ -56,7 +56,7 @@ def create_safe_db_snapshot(source_db_path: str = DB_PATH) -> Optional[str]:
             return None
 
 
-def execute_layer1_local_backup(target_dir: Optional[str] = None) -> Optional[str]:
+def execute_layer1_local_backup(target_dir: Optional[str] = None, source_db_path: str = DB_PATH) -> Optional[str]:
     r"""
     Layer 1: Compress database snapshot into timestamped ZIP archive.
     Saves to configured directory (defaults to D:\Hospital_Backup with C:\ fallback).
@@ -78,7 +78,7 @@ def execute_layer1_local_backup(target_dir: Optional[str] = None) -> Optional[st
     zip_filename = f"Hospital_Backup_{timestamp}.zip"
     zip_filepath = os.path.join(target_dir, zip_filename)
 
-    snapshot_path = create_safe_db_snapshot(DB_PATH)
+    snapshot_path = create_safe_db_snapshot(source_db_path)
     if not snapshot_path or not os.path.exists(snapshot_path):
         return None
 

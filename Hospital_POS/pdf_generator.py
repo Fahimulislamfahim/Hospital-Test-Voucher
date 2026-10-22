@@ -154,14 +154,14 @@ def generate_voucher_pdf(voucher: Dict[str, Any], output_dir: Optional[str] = No
         leading=10,
         textColor=colors.black
     )
-    # Table header styles (Inverted: White text on Black background)
+    # Table header styles (Ink-Saving: Clean black text on white background)
     style_th_c = ParagraphStyle(
         "THC",
         parent=styles["Normal"],
         fontName="Helvetica-Bold",
         fontSize=8,
         leading=10,
-        textColor=colors.white,
+        textColor=colors.black,
         alignment=1
     )
     style_th_l = ParagraphStyle(
@@ -170,7 +170,7 @@ def generate_voucher_pdf(voucher: Dict[str, Any], output_dir: Optional[str] = No
         fontName="Helvetica-Bold",
         fontSize=8,
         leading=10,
-        textColor=colors.white,
+        textColor=colors.black,
         alignment=0
     )
     style_th_r = ParagraphStyle(
@@ -179,7 +179,7 @@ def generate_voucher_pdf(voucher: Dict[str, Any], output_dir: Optional[str] = No
         fontName="Helvetica-Bold",
         fontSize=8,
         leading=10,
-        textColor=colors.white,
+        textColor=colors.black,
         alignment=2
     )
     # Table body styles (Black text on White background)
@@ -218,15 +218,6 @@ def generate_voucher_pdf(voucher: Dict[str, Any], output_dir: Optional[str] = No
         alignment=2,
         textColor=colors.black
     )
-    style_barcode = ParagraphStyle(
-        "Barcode",
-        parent=styles["Normal"],
-        fontName="Courier-Bold",
-        fontSize=12,
-        leading=14,
-        alignment=1,
-        textColor=colors.black
-    )
     style_sig = ParagraphStyle(
         "Sig",
         parent=styles["Normal"],
@@ -240,10 +231,28 @@ def generate_voucher_pdf(voucher: Dict[str, Any], output_dir: Optional[str] = No
         "Foot",
         parent=styles["Normal"],
         fontName="Helvetica",
-        fontSize=7.5,
-        leading=9.5,
+        fontSize=7,
+        leading=9,
         alignment=1,
-        textColor=colors.black
+        textColor=colors.HexColor("#374151")
+    )
+    style_auto_notice = ParagraphStyle(
+        "AutoNotice",
+        parent=styles["Normal"],
+        fontName="Helvetica-Oblique",
+        fontSize=6.5,
+        leading=8.5,
+        alignment=1,
+        textColor=colors.HexColor("#4b5563")
+    )
+    style_id_footer = ParagraphStyle(
+        "IdFooter",
+        parent=styles["Normal"],
+        fontName="Helvetica",
+        fontSize=6.5,
+        leading=8.5,
+        alignment=1,
+        textColor=colors.HexColor("#6b7280")
     )
 
     story = []
@@ -256,8 +265,8 @@ def generate_voucher_pdf(voucher: Dict[str, Any], output_dir: Optional[str] = No
         story.append(Paragraph(h_tag, style_h_sub))
     story.append(Paragraph(f"{h_addr} • Hotline: {h_phone}", style_h_sub))
     
-    # Crisp Solid Black Divider separating header from transaction info
-    story.append(HRFlowable(width="100%", thickness=1.2, color=colors.black, spaceBefore=2 * mm, spaceAfter=2.5 * mm))
+    # Crisp, ink-saving divider separating header from transaction info
+    story.append(HRFlowable(width="100%", thickness=0.75, color=colors.HexColor("#374151"), spaceBefore=2 * mm, spaceAfter=2.5 * mm))
 
     # Bordered Invoice Title Box: "DIAGNOSTIC MONEY RECEIPT / BILL"
     badge_table = Table(
@@ -267,10 +276,10 @@ def generate_voucher_pdf(voucher: Dict[str, Any], output_dir: Optional[str] = No
     badge_table.setStyle(TableStyle([
         ("ALIGN", (0, 0), (-1, -1), "CENTER"),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("TOPPADDING", (0, 0), (-1, -1), 2.5),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 2.5),
+        ("TOPPADDING", (0, 0), (-1, -1), 2),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
         ("BACKGROUND", (0, 0), (-1, -1), colors.white),
-        ("BOX", (0, 0), (-1, -1), 1.0, colors.black),
+        ("BOX", (0, 0), (-1, -1), 0.6, colors.HexColor("#374151")),
     ]))
     story.append(badge_table)
     story.append(Spacer(1, 2.5 * mm))
@@ -305,14 +314,14 @@ def generate_voucher_pdf(voucher: Dict[str, Any], output_dir: Optional[str] = No
         ("RIGHTPADDING", (0, 0), (-1, -1), 3),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
         ("BACKGROUND", (0, 0), (-1, -1), colors.white),
-        ("BOX", (0, 0), (-1, -1), 0.8, colors.black),
-        ("INNERGRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#cccccc")),
+        ("BOX", (0, 0), (-1, -1), 0.6, colors.HexColor("#374151")),
+        ("INNERGRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#e5e7eb")),
     ]))
     story.append(p_table)
     story.append(Spacer(1, 2.5 * mm))
 
     # =========================================================================
-    # 3. TEST ITEMS TABLE LAYOUT (Inverted Black Header, Clean Borders)
+    # 3. TEST ITEMS TABLE LAYOUT (Ink-Saving: Clean White Header, Crisp Borders)
     # =========================================================================
     test_rows = [
         [
@@ -339,17 +348,17 @@ def generate_voucher_pdf(voucher: Dict[str, Any], output_dir: Optional[str] = No
             Paragraph(f"{float(item.get('item_total', 0)):.2f}", style_td_r),
         ])
 
-    items_table = Table(test_rows, colWidths=[8 * mm, 16 * mm, 44 * mm, 18 * mm, 10 * mm, 16 * mm, 16 * mm])
+    items_table = Table(test_rows, colWidths=[8 * mm, 16 * mm, 44 * mm, 18 * mm, 10 * mm, 16 * mm, 16 * mm], repeatRows=1)
     t_style = [
-        ("BACKGROUND", (0, 0), (-1, 0), colors.black),
+        ("BACKGROUND", (0, 0), (-1, -1), colors.white),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("TOPPADDING", (0, 0), (-1, -1), 2.5),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 2.5),
+        ("TOPPADDING", (0, 0), (-1, -1), 2),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
         ("LEFTPADDING", (0, 0), (-1, -1), 2),
         ("RIGHTPADDING", (0, 0), (-1, -1), 2),
-        ("BACKGROUND", (0, 1), (-1, -1), colors.white),
-        ("BOX", (0, 0), (-1, -1), 0.8, colors.black),
-        ("LINEBELOW", (0, 1), (-1, -1), 0.5, colors.HexColor("#cccccc")),
+        ("BOX", (0, 0), (-1, -1), 0.6, colors.HexColor("#374151")),
+        ("LINEBELOW", (0, 0), (-1, 0), 0.75, colors.HexColor("#1f2937")),
+        ("LINEBELOW", (0, 1), (-1, -1), 0.4, colors.HexColor("#e5e7eb")),
     ]
     items_table.setStyle(TableStyle(t_style))
     story.append(items_table)
@@ -366,7 +375,9 @@ def generate_voucher_pdf(voucher: Dict[str, Any], output_dir: Optional[str] = No
     paid = float(voucher.get("paid_amount", 0.0))
     due = float(voucher.get("due_amount", 0.0))
     method = str(voucher.get("payment_method", "CASH")).upper()
-    printed_count = int(voucher.get("printed_count", 1))
+    printed_count = int(voucher.get("printed_count", 0) or 0)
+    if printed_count <= 0:
+        printed_count = 1
 
     # Monochrome Status Text
     status_text = "PAID IN FULL" if due <= 0 else f"DUE ({curr} {due:.2f})"
@@ -416,30 +427,25 @@ def generate_voucher_pdf(voucher: Dict[str, Any], output_dir: Optional[str] = No
         ("RIGHTPADDING", (0, 0), (-1, -1), 3),
         ("BACKGROUND", (0, 0), (-1, -1), colors.white),
         # Left Panel (Payment Status & Audit Info)
-        ("BOX", (0, 0), (1, -1), 0.8, colors.black),
-        ("INNERGRID", (0, 0), (1, -1), 0.5, colors.HexColor("#e5e5e5")),
+        ("BOX", (0, 0), (1, -1), 0.6, colors.HexColor("#374151")),
+        ("INNERGRID", (0, 0), (1, -1), 0.4, colors.HexColor("#e5e7eb")),
         # Right Panel (Financial Summary)
-        ("BOX", (2, 0), (3, -1), 0.8, colors.black),
-        ("LINEBELOW", (2, 0), (3, 1), 0.5, colors.HexColor("#e5e5e5")),
-        ("LINEBELOW", (2, 3), (3, 3), 0.5, colors.HexColor("#e5e5e5")),
-        # Net Payable row (solid black top and bottom borders)
-        ("LINEABOVE", (2, 2), (3, 2), 1.2, colors.black),
-        ("LINEBELOW", (2, 2), (3, 2), 1.2, colors.black),
+        ("BOX", (2, 0), (3, -1), 0.6, colors.HexColor("#374151")),
+        ("LINEBELOW", (2, 0), (3, 1), 0.4, colors.HexColor("#e5e7eb")),
+        ("LINEBELOW", (2, 3), (3, 3), 0.4, colors.HexColor("#e5e7eb")),
+        # Net Payable row (clean, ink-saving borders)
+        ("LINEABOVE", (2, 2), (3, 2), 0.75, colors.HexColor("#1f2937")),
+        ("LINEBELOW", (2, 2), (3, 2), 0.75, colors.HexColor("#1f2937")),
     ]))
     story.append(KeepTogether(fin_table))
-    story.append(Spacer(1, 3.5 * mm))
+    story.append(Spacer(1, 8 * mm))
 
     # =========================================================================
-    # 5. FOOTER, BARCODE & SIGNATURES
+    # 5. SIGNATURES & BOTTOM FOOTER (Positioned down below at the bottom)
     # =========================================================================
-    # Barcode Representation centered in monospace
-    story.append(Paragraph(f"*{v_no}*", style_barcode))
-    story.append(Spacer(1, 4 * mm))
-
-    # Two Signatures separated with space-between
     sig_table = Table([
         [
-            Paragraph("______________________________<br/><b>Patient Signature</b>", style_sig),
+            Paragraph("______________________________<br/><b>Patient / Receiver Signature</b>", style_sig),
             Paragraph("______________________________<br/><b>Authorized Signature</b>", style_sig)
         ]
     ], colWidths=[64 * mm, 64 * mm])
@@ -449,15 +455,31 @@ def generate_voucher_pdf(voucher: Dict[str, Any], output_dir: Optional[str] = No
         ("TOPPADDING", (0, 0), (-1, -1), 2),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
     ]))
-    story.append(sig_table)
-    story.append(Spacer(1, 2.5 * mm))
 
-    # Terms & Disclaimer Centered at the very bottom
+    footer_elements = [
+        sig_table,
+        Spacer(1, 4 * mm)
+    ]
+
+    # Terms & Disclaimer if configured
     if footer_text:
-        story.append(Paragraph(footer_text, style_footer))
+        footer_elements.append(Paragraph(footer_text, style_footer))
+        footer_elements.append(Spacer(1, 1.5 * mm))
+
+    # Automated digital receipt notice (small text)
+    footer_elements.append(Paragraph(
+        "This is an automated computer-generated voucher and digital receipt.",
+        style_auto_notice
+    ))
+    footer_elements.append(Spacer(1, 1.5 * mm))
+
+    # Voucher ID placed at the very end
+    footer_elements.append(Paragraph(f"Voucher ID: {v_no}", style_id_footer))
+
+    story.append(KeepTogether(footer_elements))
 
     doc.build(story)
-    print(f"[PDFGenerator] Saved Monochrome Voucher PDF: {filepath}")
+    print(f"[PDFGenerator] Saved Ink-Saving Voucher PDF: {filepath}")
     return filepath
 
 
@@ -465,7 +487,7 @@ def generate_voucher_pdf(voucher: Dict[str, Any], output_dir: Optional[str] = No
 # 2. DAILY ALL CALCULATIONS & FINANCIAL AUDIT PDF EXPORT (A4 FORMAT)
 # ==============================================================================
 
-def generate_daily_audit_pdf(date_str: str, output_dir: Optional[str] = None) -> str:
+def generate_daily_audit_pdf(date_str: str, output_dir: Optional[str] = None, db_path: Optional[str] = None) -> str:
     """
     Generate comprehensive executive financial audit report for a given day.
     Includes KPI summary cards, revenue reconciliation, test breakdown, and patient register.
@@ -477,24 +499,24 @@ def generate_daily_audit_pdf(date_str: str, output_dir: Optional[str] = None) ->
     filename = f"Daily_Audit_Report_{date_str}.pdf"
     filepath = os.path.join(output_dir, filename)
 
-    settings = database.get_all_settings()
+    settings = database.get_all_settings(db_path=db_path) if db_path else database.get_all_settings()
     h_name = settings.get("hospital_name", "City Care Diagnostic & Hospital")
     curr = settings.get("currency_symbol", "Tk")
 
     # Fetch daily metrics
-    summary = database.get_daily_summary(date_str)
+    summary = database.get_daily_summary(date_str, db_path=db_path) if db_path else database.get_daily_summary(date_str)
 
     # Fetch itemized vouchers
-    conn = database.get_connection()
+    conn = database.get_connection(db_path) if db_path else database.get_connection()
     cursor = conn.cursor()
     cursor.execute("""
         SELECT voucher_no, patient_name, patient_phone, subtotal, discount_amount,
                total_amount, paid_amount, due_amount, payment_method, payment_status,
                created_at
         FROM vouchers
-        WHERE DATE(created_at) = DATE(?)
+        WHERE DATE(created_at) = DATE(?) OR DATE(created_at, 'localtime') = DATE(?)
         ORDER BY id ASC;
-    """, (date_str,))
+    """, (date_str, date_str))
     vouchers = [dict(r) for r in cursor.fetchall()]
 
     # Fetch test performance distribution
@@ -502,10 +524,10 @@ def generate_daily_audit_pdf(date_str: str, output_dir: Optional[str] = None) ->
         SELECT vi.test_name, vi.test_code, COUNT(vi.id) as qty_count, SUM(vi.item_total) as total_rev
         FROM voucher_items vi
         JOIN vouchers v ON vi.voucher_id = v.id
-        WHERE DATE(v.created_at) = DATE(?)
+        WHERE DATE(v.created_at) = DATE(?) OR DATE(v.created_at, 'localtime') = DATE(?)
         GROUP BY vi.test_name, vi.test_code
         ORDER BY qty_count DESC;
-    """, (date_str,))
+    """, (date_str, date_str))
     test_breakdown = [dict(r) for r in cursor.fetchall()]
     conn.close()
 
